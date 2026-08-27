@@ -1,0 +1,75 @@
+import { Bell, type LucideIcon } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { DemoMenu } from '@/components/layout/demo-menu'
+import { MobileSidebar } from '@/components/layout/mobile-sidebar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { navigationItems } from '@/data/navigation'
+
+type HeaderAction = {
+  label: string
+  icon: LucideIcon
+  /** Present when the control navigates somewhere rather than opening a panel. */
+  href?: string
+}
+
+/**
+ * The bell links to the Attention Inbox instead of opening a second, parallel
+ * notification surface — there is one place reminders live.
+ */
+const headerActions: HeaderAction[] = [{ label: 'Automations', icon: Bell, href: '/automations' }]
+
+/**
+ * Longest matching prefix, so a nested route like `/insights/:id` still reports
+ * the section it belongs to rather than falling through to "Not found".
+ */
+function useCurrentPageLabel() {
+  const { pathname } = useLocation()
+
+  const exact = navigationItems.find((item) => item.href === pathname)
+  if (exact) return exact.label
+
+  const nested = navigationItems
+    .filter((item) => item.href !== '/' && pathname.startsWith(`${item.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]
+
+  return nested?.label ?? 'Not found'
+}
+
+export function TopHeader() {
+  const pageLabel = useCurrentPageLabel()
+
+  return (
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
+      <MobileSidebar />
+
+      <p className="truncate text-sm font-medium">{pageLabel}</p>
+
+      <div className="ml-auto flex items-center gap-1">
+        <DemoMenu />
+
+        {headerActions.map(({ label, icon: Icon, href }) => (
+          <Tooltip key={label}>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={label} asChild={href !== undefined}>
+                {href ? (
+                  <Link to={href}>
+                    <Icon aria-hidden="true" />
+                  </Link>
+                ) : (
+                  <Icon aria-hidden="true" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{label}</TooltipContent>
+          </Tooltip>
+        ))}
+
+        <Avatar className="ml-1 size-7">
+          <AvatarFallback className="text-xs">HR</AvatarFallback>
+        </Avatar>
+      </div>
+    </header>
+  )
+}
