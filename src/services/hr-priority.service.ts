@@ -451,12 +451,15 @@ function makeSuggestedIssue(draft: IssueDraft): PriorityIssue | null {
     evidence,
     urgency: draft.urgency,
   }
-  const components = [
+  const componentCandidates: Array<{ score: number | null; weight: number }> = [
     { score: breakdown.severity.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.severity },
     { score: breakdown.reach.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.reach },
     { score: breakdown.evidence.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.evidence },
     { score: breakdown.urgency.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.urgency },
-  ].filter((item): item is { score: number; weight: number } => item.score !== null)
+  ]
+  const components = componentCandidates.filter(
+    (item): item is { score: number; weight: number } => item.score !== null,
+  )
   if (components.length < 2 || evidence.score === null) return null
   const availableWeight = components.reduce((sum, item) => sum + item.weight, 0)
   if (availableWeight <= 0) return null
