@@ -1,4 +1,5 @@
 import type { TargetDirection } from '@/data/hr-action-targets'
+import type { EvidenceTheme } from '@/types/hr-analytics'
 import type {
   ActionExecutionStatus,
   RecommendationDriverKey,
@@ -173,17 +174,29 @@ export const ACTION_CATALOG: readonly DriverActionTemplate[] = [
  * guess an intervention and call it evidence-based.
  */
 export const DIAGNOSTIC_ACTION_TEMPLATE: ActionTemplate = {
-  title: 'Conduct a focused employee check-in with the affected group',
+  title: 'Review and validate the group-level issue',
   description:
-    'Run a focused HR check-in with the affected employee group to validate the underlying issue before committing to an intervention.',
+    'Review the available evidence with the relevant HR and business owner, check the affected group’s experience, and agree whether a targeted intervention is warranted.',
   successMeasureTemplate:
-    'Complete check-ins with the affected {scope} group and record the validated issue before the due date.',
+    'Complete the {scope} evidence review and record the validated issue before the due date.',
   operationalSuccessMeasure:
-    'Complete check-ins with the affected {scope} group and record the validated issue before the due date.',
+    'Complete the {scope} evidence review and record the validated issue before the due date.',
   targetDirection: 'increase',
 }
 
 export const DIAGNOSTIC_DRIVER_LABEL = 'No strong driver identified'
+
+/** Only measured themes with a genuinely corresponding intervention are mapped. */
+export const EVIDENCE_THEME_DRIVER_MAP: Partial<Record<EvidenceTheme, DriverCategory>> = {
+  managerSupport: 'manager-support',
+  careerGrowth: 'career-growth',
+  roleClarity: 'role-clarity',
+  workload: 'workload',
+  exitWorkload: 'workload',
+  belonging: 'belonging',
+  toolsAccess: 'tools-access',
+  onboardingOverall: 'onboarding',
+}
 
 /**
  * The single place a driver is mapped to a suggested owner. These are ROLE
@@ -262,25 +275,17 @@ export function scopePhrase(scope: InsightScope): string {
 /* ------------------------------------------------------- status vocabulary */
 
 export const RECOMMENDATION_STATUS_LABELS: Record<RecommendedActionStatus, string> = {
-  'pending-review': 'Pending review',
+  'pending-review': 'Suggested',
   approved: 'Approved',
   rejected: 'Rejected',
 }
 
 export const ACTION_STATUS_LABELS: Record<ActionExecutionStatus, string> = {
-  planned: 'Planned',
+  planned: 'Approved',
   'in-progress': 'In Progress',
   completed: 'Completed',
   cancelled: 'Cancelled',
 }
-
-/** The only transitions the demo offers — four states, not twelve. */
-export const ACTION_STATUS_OPTIONS = [
-  'planned',
-  'in-progress',
-  'completed',
-  'cancelled',
-] as const satisfies readonly ActionExecutionStatus[]
 
 /** Optional rejection reasons, offered as a shortcut rather than free text. */
 export const REJECTION_REASONS = [

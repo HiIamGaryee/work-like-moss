@@ -12,8 +12,15 @@ export type MetricValue = number | null
 export const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
-export const isInRange = (value: number, min: number, max: number): boolean =>
+export const isInRange = (value: unknown, min: number, max: number): value is number =>
   isFiniteNumber(value) && value >= min && value <= max
+
+export function safeNumber(value: unknown): MetricValue {
+  if (isFiniteNumber(value)) return value
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 export function round(value: number, decimals = 2): number {
   const factor = 10 ** decimals
@@ -84,7 +91,12 @@ export function countWhere<T>(items: readonly T[], predicate: (item: T) => boole
 
 /** Copies before sorting; `null` values always sink to the bottom. */
 export function sortDescending<T>(items: readonly T[], getValue: (item: T) => MetricValue): T[] {
-  return [...items].sort((a, b) => compareValues(getValue(b), getValue(a)))
+  return [...items].sort((a, b) => {
+    const left = getValue(a)
+    const right = getValue(b)
+    if (left === null || right === null) return compareValues(left, right)
+    return right - left
+  })
 }
 
 export function sortAscending<T>(items: readonly T[], getValue: (item: T) => MetricValue): T[] {

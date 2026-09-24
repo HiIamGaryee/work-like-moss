@@ -1,4 +1,5 @@
 import type { MetricDirection } from '@/data/hr-metric-rules'
+import { MIN_ANALYSIS_SAMPLE_SIZE, PULSE_STABLE_THRESHOLD } from '@/data/hr-analytics.constants'
 import type {
   ComparisonQuality,
   ImpactDirection,
@@ -18,13 +19,15 @@ import { round } from '@/utils/analytics'
  */
 export const IMPACT_RULES = {
   /** Movement smaller than this reads as unchanged, not as improvement. */
-  meaningfulScoreChange: 0.1,
+  meaningfulScoreChange: PULSE_STABLE_THRESHOLD,
   /** Share of the baseline → target span that counts as partially met. */
   targetPartialThreshold: 0.5,
-  /** Fewest post-action responses before a comparison is reported at all. */
-  minPostActionResponses: 10,
+  /** Below this, the result remains visible but receives limited-evidence wording. */
+  minPostActionResponses: MIN_ANALYSIS_SAMPLE_SIZE,
   /** Below this, the comparison is flagged as limited rather than comparable. */
   comparableResponses: 30,
+  /** Response-count movement above this ratio earns a neutral comparability note. */
+  notableSampleSizeDifferenceRatio: 0.25,
   /**
    * Fewest judged actions before an achievement rate is shown at all. A rate
    * off one or two actions invites a conclusion the sample cannot support.
@@ -33,7 +36,7 @@ export const IMPACT_RULES = {
 } as const
 
 export const IMPACT_RULES_NOTE =
-  'Prototype measurement rules. A change larger than 0.1 points is reported as movement; reaching at least half of the baseline-to-target span is reported as partially met. These are demo thresholds, not statistical significance tests.'
+  `Prototype measurement rules. A change larger than ${PULSE_STABLE_THRESHOLD.toFixed(2)} points is reported as movement. Samples below ${MIN_ANALYSIS_SAMPLE_SIZE} remain visible with limited-evidence wording. These are demo thresholds, not statistical significance tests.`
 
 export const CAUSATION_NOTE =
   'Observed change after an action does not prove that the action alone caused the change.'
@@ -89,7 +92,11 @@ export function classifyTargetStatus(
   target: number | null,
   direction: MetricDirection,
 ): TargetStatus {
-  if (baseline === null || current === null || target === null) return 'not-measured'
+  if (current === null || target === null) return 'not-measured'
+
+  const targetReached = direction === 'higher-is-better' ? current >= target : current <= target
+  if (targetReached) return 'met'
+  if (baseline === null) return 'not-met'
 
   const required = favourableChange(baseline, target, direction)
   const achieved = favourableChange(baseline, current, direction)
@@ -108,7 +115,6 @@ export function classifyComparisonQuality(
 ): ComparisonQuality {
   const smallest = Math.min(baselineSample ?? Infinity, currentSample ?? Infinity)
   if (smallest === Infinity) return 'comparable'
-  if (smallest < IMPACT_RULES.minPostActionResponses) return 'not-comparable'
   return smallest < IMPACT_RULES.comparableResponses ? 'limited' : 'comparable'
 }
 

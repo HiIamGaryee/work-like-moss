@@ -10,9 +10,9 @@ export interface Employee {
   employeeGroup: string
   location: string
   joinDate: string
-  tenureMonths: number
-  baseEngagement: number
-  exitStatus: EmployeeExitStatus
+  tenureMonths: number | null
+  baseEngagement: number | null
+  exitStatus: string
   exitDate: string | null
   exitReason: string | null
 }
@@ -23,10 +23,10 @@ export interface OnboardingSurvey {
   employeeGroup: string
   joinDate: string
   surveyDate: string
-  overallScore: number
-  managerSupport: number
-  roleClarity: number
-  toolsAccess: number
+  overallScore: number | null
+  managerSupport: number | null
+  roleClarity: number | null
+  toolsAccess: number | null
   comment: string
 }
 
@@ -34,11 +34,11 @@ export interface PulseSurvey {
   employeeId: string
   surveyWave: string
   surveyDate: string
-  engagementScore: number
-  managerSupport: number
-  workload: number
-  careerGrowth: number
-  belonging: number
+  engagementScore: number | null
+  managerSupport: number | null
+  workload: number | null
+  careerGrowth: number | null
+  belonging: number | null
   comment: string
 }
 
@@ -46,11 +46,11 @@ export interface ExitSurvey {
   employeeId: string
   exitDate: string
   primaryExitReason: string
-  overallExperience: number
-  managerSupport: number
-  careerOpportunity: number
-  workload: number
-  wouldRecommend: WouldRecommend
+  overallExperience: number | null
+  managerSupport: number | null
+  careerOpportunity: number | null
+  workload: number | null
+  wouldRecommend: string
   comment: string
 }
 
@@ -62,7 +62,7 @@ export interface ActionRecord {
   action: string
   owner: string
   startDate: string
-  status: ActionStatus
+  status: string
   successMeasure: string
 }
 
@@ -75,7 +75,7 @@ export interface DataDictionaryEntry {
 
 export interface DatasetSummaryItem {
   metric: string
-  value: number
+  value: number | null
 }
 
 export interface HrDataset {

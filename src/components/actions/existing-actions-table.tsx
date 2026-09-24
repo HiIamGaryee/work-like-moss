@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { ActionRecord, ActionStatus } from '@/types/hr-data'
+import type { ActionRecord } from '@/types/hr-data'
 import { formatDate } from '@/utils/format'
 
 type ExistingActionsTableProps = {
@@ -17,11 +17,11 @@ type ExistingActionsTableProps = {
 }
 
 /** Monochrome only — the official status word carries the meaning. */
-const STATUS_VARIANTS: Record<ActionStatus, 'default' | 'secondary' | 'outline'> = {
-  Completed: 'default',
-  'In Progress': 'secondary',
-  Planned: 'outline',
-}
+const STATUS_VARIANTS = new Map<string, 'default' | 'secondary' | 'outline'>([
+  ['Completed', 'default'],
+  ['In Progress', 'secondary'],
+  ['Planned', 'outline'],
+])
 
 const COLUMNS = [
   { key: 'action', label: 'Action' },
@@ -69,7 +69,7 @@ export function ExistingActionsTable({ actions }: ExistingActionsTableProps) {
             <TableCell>{record.owner}</TableCell>
             <TableCell className="tabular-nums">{formatDate(record.startDate)}</TableCell>
             <TableCell>
-              <Badge variant={STATUS_VARIANTS[record.status]}>{record.status}</Badge>
+              <Badge variant={STATUS_VARIANTS.get(record.status) ?? 'outline'}>{record.status}</Badge>
             </TableCell>
             <TableCell className="max-w-[20rem] whitespace-normal text-muted-foreground">
               {record.successMeasure}

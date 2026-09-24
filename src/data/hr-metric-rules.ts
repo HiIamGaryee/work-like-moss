@@ -36,7 +36,7 @@ export interface ImpactMetricDefinition {
   /** Reads the metric from one pulse wave point, for pulse-based measures. */
   readPulse?: (point: PulseTrendPoint) => number | null
   /** Reads the metric from one onboarding response, for onboarding measures. */
-  readOnboarding?: (row: OnboardingSurvey) => number
+  readOnboarding?: (row: OnboardingSurvey) => number | null
   /** Where a later reading would come from, in words. */
   nextMeasurementLabel: string
 }
@@ -58,7 +58,7 @@ const pulseMetric = (
 const onboardingMetric = (
   key: ImpactMetricKey,
   label: string,
-  read: (row: OnboardingSurvey) => number,
+  read: (row: OnboardingSurvey) => number | null,
 ): ImpactMetricDefinition => ({
   key,
   label,

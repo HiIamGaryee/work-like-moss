@@ -12,13 +12,13 @@ const STEPS = [
     step: '2',
     title: 'Match later survey data',
     description:
-      'The engine looks for a later reading of the same metric over the same workforce scope, dated after the action started.',
+      'For completed demo actions, the engine looks for a later reading of the same metric, source and workforce scope, dated after completion.',
   },
   {
     step: '3',
-    title: 'Compare against the target',
+    title: 'Assess movement and target separately',
     description:
-      'The later reading is compared with the target HR approved — not with a target the system chose afterwards.',
+      'Movement is classified using metric direction. A target is checked only when HR recorded a numeric target.',
   },
 ]
 

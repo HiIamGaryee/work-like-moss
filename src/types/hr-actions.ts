@@ -36,7 +36,9 @@ export type ActionExecutionStatus = 'planned' | 'in-progress' | 'completed' | 'c
 
 export interface RecommendedAction {
   id: string
-  insightId: string
+  insightId?: string
+  /** Stable Step 4 group-level issue id, when this recommendation came from the priority queue. */
+  issueId?: string
 
   title: string
   description: string
@@ -78,6 +80,7 @@ export interface RecommendedAction {
 export interface HrAction {
   id: string
   sourceRecommendationId?: string
+  issueId?: string
   /** Links back to `/insights/:insightId` for the original analysis. */
   insightId?: string
 
@@ -90,6 +93,7 @@ export interface HrAction {
   /** Priority of the underlying issue when the action was approved. */
   priorityScoreAtCreation?: number
   priorityLevelAtCreation?: PriorityLevel
+  evidenceSources?: InsightDataSource[]
 
   owner: string
 
@@ -112,6 +116,7 @@ export interface HrAction {
 
   createdAt: string
   updatedAt: string
+  approvedAt?: string
   /** Set the first time the status becomes `completed`. */
   completedAt?: string
 }
@@ -125,6 +130,11 @@ export interface ActionReviewDraft {
   dueDate: string
   successMeasure: string
   targetValue: string
+}
+
+export interface ActionAssignmentDraft {
+  owner: string
+  dueDate: string
 }
 
 /** What HR decided about one recommendation, persisted separately from actions. */

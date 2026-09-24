@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { demoCareProfiles } from '@/data/hr-care-demo'
+import { getEmployeeExitStatus } from '@/data/hr-data.constants'
 import { useHrData } from '@/hooks/use-hr-data'
 import type { Employee } from '@/types/hr-data'
 import { formatCount } from '@/utils/format'
@@ -84,7 +85,7 @@ export function EmployeesPage() {
     return employees.filter((employee) => {
       if (division !== ALL && employee.division !== division) return false
       if (group !== ALL && employee.employeeGroup !== group) return false
-      if (status !== ALL && employee.exitStatus !== status) return false
+      if (status !== ALL && getEmployeeExitStatus(employee.exitStatus) !== status) return false
       if (query === '') return true
 
       /* Search covers only the identifying fields the directory displays. */
@@ -222,13 +223,13 @@ export function EmployeesPage() {
                         <TableCell>{employee.employeeGroup}</TableCell>
                         <TableCell>{employee.location}</TableCell>
                         <TableCell className="tabular-nums">
-                          {employee.tenureMonths} months
+                          {employee.tenureMonths === null ? '—' : `${employee.tenureMonths} months`}
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant={employee.exitStatus === 'Active' ? 'secondary' : 'outline'}
                           >
-                            {employee.exitStatus}
+                            {getEmployeeExitStatus(employee.exitStatus) ?? employee.exitStatus}
                           </Badge>
                         </TableCell>
                         <TableCell>

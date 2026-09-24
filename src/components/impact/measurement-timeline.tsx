@@ -29,7 +29,8 @@ export function MeasurementTimeline({ impact }: MeasurementTimelineProps) {
       ? [
           {
             key: 'baseline',
-            when: formatDate(measurement.baselineDate),
+            when: [measurement.baselinePeriod, formatDate(measurement.baselineDate)]
+              .filter(Boolean).join(' · '),
             what: 'Baseline measured',
             detail:
               measurement.baselineValue === null
@@ -42,13 +43,17 @@ export function MeasurementTimeline({ impact }: MeasurementTimelineProps) {
     ...(impact.dueDate !== impact.startDate
       ? [{ key: 'due', when: formatDate(impact.dueDate), what: 'Action due' }]
       : []),
+    ...(impact.completedAt
+      ? [{ key: 'completed', when: formatDate(impact.completedAt.slice(0, 10)), what: 'Action completed' }]
+      : []),
     ...(measurement?.currentDate && measurement.currentValue !== null
       ? [
           {
             key: 'measured',
-            when: formatDate(measurement.currentDate),
+            when: [measurement.currentPeriod, formatDate(measurement.currentDate)]
+              .filter(Boolean).join(' · '),
             what: `${impact.dataSources[0] ?? 'Survey'} measurement`,
-            detail: `${measurement.label} ${formatScore(measurement.currentValue)}`,
+            detail: `${measurement.label} ${formatScore(measurement.currentValue)}${measurement.currentSampleSize === null ? '' : ` · n = ${measurement.currentSampleSize}`}`,
           },
         ]
       : [

@@ -31,14 +31,9 @@ export const WOULD_RECOMMEND_VALUES = ['Yes', 'No', 'Unsure'] as const
 
 export const ACTION_STATUSES = ['Planned', 'In Progress', 'Completed'] as const
 
-/**
- * The workbook writes `Left` in `Employees.exit_status`, while the application
- * model uses `Leaver`. Without this alias every leaver would silently fall back
- * to `Active` and the leaver rate would read as 0%.
- */
-export const EXIT_STATUS_ALIASES = {
-  left: 'Leaver',
-  resigned: 'Leaver',
-  exited: 'Leaver',
-  current: 'Active',
-} as const satisfies Record<string, (typeof EXIT_STATUSES)[number]>
+/** Interpret the workbook's `Left` as Leaver without changing the source status. */
+export function getEmployeeExitStatus(status: string): (typeof EXIT_STATUSES)[number] | null {
+  if (status === 'Active') return 'Active'
+  if (status === 'Left' || status === 'Leaver') return 'Leaver'
+  return null
+}
