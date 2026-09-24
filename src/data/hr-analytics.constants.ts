@@ -20,37 +20,50 @@ export const TENURE_MONTHS_SCALE = { min: 0, max: 720 } as const
  */
 export const NEW_JOINER_MAX_MONTHS = 6
 
+/** Below this count, survey comparisons display a small-sample notice. */
+export const MIN_ANALYSIS_SAMPLE_SIZE = 10
+
+/** Descriptive demo cutoffs, not statistical significance thresholds. */
+export const MEANINGFUL_SCORE_GAP = 0.2
+export const STRONG_SCORE_GAP = 0.3
+export const MEANINGFUL_EXIT_SHARE_GAP = 5
+export const STRONG_EXIT_SHARE_GAP = 10
+export const EVIDENCE_EQUALITY_TOLERANCE = 0.01
+
+/** Point change at or below this magnitude is described as stable. */
+export const PULSE_STABLE_THRESHOLD = 0.05
+
 export const TENURE_BANDS = ['0–6 months', '7–12 months', '13–24 months', '25+ months'] as const
 
 export type TenureBand = (typeof TENURE_BANDS)[number]
 
 const TENURE_BAND_UPPER_BOUNDS: readonly { band: TenureBand; maxMonths: number }[] = [
-  { band: '0–6 months', maxMonths: 6 },
+  { band: '0–6 months', maxMonths: NEW_JOINER_MAX_MONTHS },
   { band: '7–12 months', maxMonths: 12 },
   { band: '13–24 months', maxMonths: 24 },
 ]
 
-export const isValidScore = (value: number): boolean =>
+export const isValidScore = (value: unknown): value is number =>
   isInRange(value, SCORE_SCALE.min, SCORE_SCALE.max)
 
-export const isValidBaseEngagement = (value: number): boolean =>
+export const isValidBaseEngagement = (value: unknown): value is number =>
   isInRange(value, BASE_ENGAGEMENT_SCALE.min, BASE_ENGAGEMENT_SCALE.max)
 
-export const isValidTenure = (value: number): boolean =>
-  isInRange(value, TENURE_MONTHS_SCALE.min, TENURE_MONTHS_SCALE.max)
+export const isValidTenure = (value: unknown): value is number =>
+  isInRange(value, TENURE_MONTHS_SCALE.min, TENURE_MONTHS_SCALE.max) && Number.isInteger(value)
 
 /**
  * The only place tenure band conditions are written. Returns `null` for a
  * tenure value the workbook cannot support, so the row is excluded rather than
  * silently landing in a band it does not belong to.
  */
-export function getTenureBand(tenureMonths: number): TenureBand | null {
+export function getTenureBand(tenureMonths: number | null): TenureBand | null {
   if (!isValidTenure(tenureMonths)) return null
   const match = TENURE_BAND_UPPER_BOUNDS.find((entry) => tenureMonths <= entry.maxMonths)
   return match ? match.band : '25+ months'
 }
 
-export const isNewJoiner = (tenureMonths: number): boolean =>
+export const isNewJoiner = (tenureMonths: number | null): boolean =>
   isValidTenure(tenureMonths) && tenureMonths <= NEW_JOINER_MAX_MONTHS
 
 /** Decimal places for values read by a person rather than by a formula. */

@@ -1,4 +1,4 @@
-import { NEW_JOINER_MAX_MONTHS } from '@/data/hr-analytics.constants'
+import { isNewJoiner } from '@/data/hr-analytics.constants'
 import {
   IMPACT_RULES,
   OFFICIAL_ACTION_EXCLUSIONS,
@@ -19,6 +19,7 @@ import type {
   ImpactScope,
   ImpactSummary,
   HrImpactResult,
+  OutcomeStatus,
 } from '@/types/hr-impact'
 import { average, round } from '@/utils/analytics'
 import { isBefore } from '@/utils/date'
@@ -35,9 +36,9 @@ import { isBefore } from '@/utils/date'
  *  - **Invent a measurement.** There is no synthetic wave, no projected score
  *    and no "simulate improvement" path. When the workbook holds no later
  *    reading, the answer is `awaiting-measurement`, which is a real result.
- *  - **Recompute history.** The baseline is read from the action record, never
- *    recalculated from today's data, so an approved action's starting point
- *    cannot drift after the fact.
+ *  - **Rewrite history.** A stored action baseline always wins. Analytics are
+ *    only used to recover a missing baseline or attach its period and sample
+ *    context, so an approved numeric baseline cannot drift after the fact.
  *  - **Claim causation.** Every generated sentence says a metric moved *after*
  *    an action. Temporal order is not evidence of cause, and no confidence
  *    figure is produced anywhere.
@@ -97,7 +98,7 @@ function onboardingRowsForScope(
   if (scope.kind === 'new-joiners') {
     return rows.filter((row) => {
       const tenure = employeesById.get(row.employeeId)?.tenureMonths
-      return tenure !== undefined && tenure <= NEW_JOINER_MAX_MONTHS
+      return tenure !== undefined && isNewJoiner(tenure)
     })
   }
   /* Tenure bands have no onboarding equivalent in this workbook. */
@@ -109,7 +110,12 @@ const scopeLabel = (scope: ImpactScope): string =>
 
 /* ------------------------------------------------------------ measurements */
 
-type Reading = { value: number; date: string | null; sampleSize?: number }
+type Reading = {
+  value: number
+  date: string | null
+  period: string | null
+  sampleSize?: number
+}
 
 /** The most recent pulse wave measured strictly after `afterDate`. */
 function latestPulseAfter(
@@ -131,7 +137,12 @@ function latestPulseAfter(
 
   const value = definition.readPulse(latest)
   if (value === null) return null
-  return { value: round(value, 2), date: latest.date, sampleSize: latest.responseCount }
+  return {
+    value: round(value, 2),
+    date: latest.date,
+    period: latest.wave,
+    sampleSize: latest.responseCount,
+  }
 }
 
 /** The last pulse wave measured on or before `onOrBefore`. */
@@ -155,7 +166,12 @@ function pulseAtOrBefore(
 
   const value = definition.readPulse(last)
   if (value === null) return null
-  return { value: round(value, 2), date: last.date, sampleSize: last.responseCount }
+  return {
+    value: round(value, 2),
+    date: last.date,
+    period: last.wave,
+    sampleSize: last.responseCount,
+  }
 }
 
 /** Mean of onboarding responses on one side of a date boundary. */
@@ -178,9 +194,53 @@ function onboardingAcross(
   const dates = matching.map((row) => row.surveyDate).sort()
   return {
     value: round(value, 2),
-    date: side === 'after' ? dates[dates.length - 1] : dates[dates.length - 1],
+    date: dates[dates.length - 1],
+    period: dates.length > 0 ? `Responses through ${dates[dates.length - 1]}` : null,
     sampleSize: matching.length,
   }
+}
+
+function comparisonNote(
+  definition: ImpactMetricDefinition,
+  baseline: Reading | null,
+  current: Reading | null,
+): string {
+  const notes: string[] = []
+  if (definition.source === 'Onboarding Survey') {
+    notes.push(current
+      ? 'This compares later onboarding respondents with an earlier cohort, not the same employees.'
+      : 'Any future comparison will use a later onboarding cohort, not repeated responses from the same employees.')
+  }
+
+  const baselineSize = baseline?.sampleSize
+  const currentSize = current?.sampleSize
+  const availableSizes = [baselineSize, currentSize].filter(
+    (size): size is number => size !== undefined,
+  )
+  if (availableSizes.some((size) => size < IMPACT_RULES.minPostActionResponses)) {
+    notes.push(`Limited evidence: at least one period has fewer than ${IMPACT_RULES.minPostActionResponses} valid responses.`)
+  }
+  if (baselineSize !== undefined && currentSize !== undefined) {
+    const denominator = Math.max(baselineSize, currentSize)
+    if (denominator > 0 &&
+        Math.abs(currentSize - baselineSize) / denominator >=
+          IMPACT_RULES.notableSampleSizeDifferenceRatio) {
+      notes.push('Response counts differ between periods.')
+    }
+  }
+  return notes.join(' ')
+}
+
+function outcomeStatusFor(
+  measurementStatus: ActionImpact['measurementStatus'],
+  measurement: ImpactMeasurement | null,
+): OutcomeStatus {
+  if (measurementStatus === 'awaiting-measurement') return 'awaiting-measurement'
+  if (measurementStatus === 'not-comparable' || !measurement) return 'not-comparable'
+  if (measurement.direction === 'improved') return 'improved'
+  if (measurement.direction === 'declined') return 'declined'
+  if (measurement.direction === 'unchanged') return 'no-clear-change'
+  return 'not-comparable'
 }
 
 /* ---------------------------------------------------------- interpretation */
@@ -202,23 +262,28 @@ function buildInterpretation(
   measurement: ImpactMeasurement | null,
   nextMeasurementLabel: string,
   unmeasurableReason?: string,
+  timingPhrase = 'following action completion',
 ): string {
   if (unmeasurableReason) return unmeasurableReason
 
   if (!measurement || measurement.currentValue === null) {
     const state =
       actionStatus === 'completed'
-        ? 'The action is complete, but no later measurement of the target metric is available yet.'
-        : 'The action is still in progress and no later measurement of the target metric is available yet.'
+        ? 'The action is complete, but no later comparable measurement is available yet.'
+        : 'The action is not complete, so outcome measurement is not ready.'
     return `${state} ${nextMeasurementLabel} would provide the next reading.`
   }
 
   const { label, baselineValue, currentValue, targetValue, direction, targetStatus } = measurement
   const from = baselineValue === null ? 'its baseline' : baselineValue.toFixed(2)
-  const movement = `${label} ${DIRECTION_VERBS[direction]} after the action began, going from ${from} to ${currentValue.toFixed(2)}`
+  if (baselineValue === null || direction === 'unknown') {
+    return `A later ${label} reading is available, but no comparable baseline is recorded. No outcome direction is assigned.`
+  }
+
+  const movement = `${label} ${DIRECTION_VERBS[direction]} in the next comparable measurement ${timingPhrase}, going from ${from} to ${currentValue.toFixed(2)}`
 
   if (targetValue === null) {
-    return `${movement}. No target was recorded for this action, so there is nothing to compare the result against.`
+    return `${movement}. No numeric target was defined, so movement and target attainment remain separate.`
   }
 
   const targetPhrase =
@@ -241,7 +306,7 @@ function buildInterpretation(
 type MeasurementInputs = {
   definition: ImpactMetricDefinition
   scope: ImpactScope
-  startDate: string
+  measurementAfterDate: string
   baseline: Reading | null
   targetValue: number | null
   analytics: HrAnalytics
@@ -252,7 +317,7 @@ type MeasurementInputs = {
 function buildMeasurement({
   definition,
   scope,
-  startDate,
+  measurementAfterDate,
   baseline,
   targetValue,
   analytics,
@@ -263,11 +328,11 @@ function buildMeasurement({
 
   const current =
     definition.source === 'Pulse Survey'
-      ? latestPulseAfter(pulseTrendForScope(scope, analytics), definition, startDate)
+      ? latestPulseAfter(pulseTrendForScope(scope, analytics), definition, measurementAfterDate)
       : onboardingAcross(
           onboardingRowsForScope(scope, dataset, employeesById),
           definition,
-          startDate,
+          measurementAfterDate,
           'after',
         )
 
@@ -276,68 +341,73 @@ function buildMeasurement({
   if (!current) {
     return {
       measurement: {
+        metricKey: definition.key,
         label,
+        source: definition.source,
+        scope,
         baselineValue: baseline?.value ?? null,
         currentValue: null,
         targetValue,
         unit: 'score',
         baselineDate: baseline?.date ?? null,
         currentDate: null,
+        baselinePeriod: baseline?.period ?? null,
+        currentPeriod: null,
         difference: null,
         percentageChange: null,
         direction: 'unknown',
         targetStatus: 'not-measured',
         progressToTarget: null,
-        ...(baseline?.sampleSize !== undefined ? { baselineSampleSize: baseline.sampleSize } : {}),
+        baselineSampleSize: baseline?.sampleSize ?? null,
+        currentSampleSize: null,
         comparisonQuality: 'not-comparable',
+        note: comparisonNote(definition, baseline, null),
       },
-    }
-  }
-
-  /* Too few later responses to report a comparison at all. */
-  if (
-    current.sampleSize !== undefined &&
-    current.sampleSize < IMPACT_RULES.minPostActionResponses
-  ) {
-    return {
-      measurement: null,
-      reason: `Later ${definition.source} responses exist for ${scopeLabel(scope)}, but only ${current.sampleSize} of them fall after the action started — fewer than the ${IMPACT_RULES.minPostActionResponses} needed before a comparison is reported.`,
     }
   }
 
   const baselineValue = baseline?.value ?? null
   const difference =
     baselineValue === null ? null : round(current.value - baselineValue, 2)
-  const percentageChange =
-    baselineValue === null || baselineValue === 0
-      ? null
-      : round(((current.value - baselineValue) / baselineValue) * 100, 1)
+  const percentageChange = null
 
   /* Same metric, same waves, company-wide — context only, never a control. */
   const companyCurrent =
     definition.source === 'Pulse Survey' && scope.kind !== 'company'
-      ? latestPulseAfter(analytics.pulse.trend, definition, startDate)
+      ? latestPulseAfter(analytics.pulse.trend, definition, measurementAfterDate)
       : null
   const companyBaseline =
-    companyCurrent !== null ? pulseAtOrBefore(analytics.pulse.trend, definition, startDate) : null
+    companyCurrent !== null && baseline?.date
+      ? pulseAtOrBefore(analytics.pulse.trend, definition, baseline.date)
+      : null
+
+  const comparisonQuality = baselineValue === null
+    ? 'not-comparable' as const
+    : classifyComparisonQuality(baseline?.sampleSize, current.sampleSize)
 
   return {
     measurement: {
+      metricKey: definition.key,
       label,
+      source: definition.source,
+      scope,
       baselineValue,
       currentValue: current.value,
       targetValue,
       unit: 'score',
       baselineDate: baseline?.date ?? null,
       currentDate: current.date,
+      baselinePeriod: baseline?.period ?? null,
+      currentPeriod: current.period,
       difference,
       percentageChange,
       direction: classifyDirection(baselineValue, current.value, direction),
       targetStatus: classifyTargetStatus(baselineValue, current.value, targetValue, direction),
       progressToTarget: progressTowardTarget(baselineValue, current.value, targetValue, direction),
-      ...(baseline?.sampleSize !== undefined ? { baselineSampleSize: baseline.sampleSize } : {}),
-      ...(current.sampleSize !== undefined ? { currentSampleSize: current.sampleSize } : {}),
-      comparisonQuality: classifyComparisonQuality(baseline?.sampleSize, current.sampleSize),
+      baselineSampleSize: baseline?.sampleSize ?? null,
+      currentSampleSize: current.sampleSize ?? null,
+      comparisonQuality,
+      note: comparisonNote(definition, baseline, current),
       ...(companyCurrent && companyBaseline
         ? { companyDifference: round(companyCurrent.value - companyBaseline.value, 2) }
         : {}),
@@ -350,6 +420,70 @@ function buildMeasurement({
 const UNMAPPED_BASELINE_REASON =
   "This action's baseline is the issue's own headline metric, which this prototype does not map to a repeatable survey measure. No target was suggested for it either, so there is nothing to measure against."
 
+function baselineForAction(
+  action: HrAction,
+  definition: ImpactMetricDefinition,
+  scope: ImpactScope,
+  dataset: HrDataset,
+  analytics: HrAnalytics,
+  employeesById: Map<string, Employee>,
+): Reading | null {
+  const referenceDate = (action.approvedAt ?? action.createdAt).slice(0, 10)
+  const contextual = definition.source === 'Pulse Survey'
+    ? pulseAtOrBefore(pulseTrendForScope(scope, analytics), definition, referenceDate)
+    : onboardingAcross(
+        onboardingRowsForScope(scope, dataset, employeesById),
+        definition,
+        referenceDate,
+        'before',
+      )
+  const storedValue = action.baselineMetric?.unit === 'score'
+    ? action.baselineMetric.value
+    : null
+  if (storedValue !== null && storedValue !== undefined) {
+    return {
+      value: storedValue,
+      date: contextual?.date ?? null,
+      period: contextual?.period ?? null,
+      ...(contextual?.sampleSize !== undefined
+        ? { sampleSize: contextual.sampleSize }
+        : {}),
+    }
+  }
+  return contextual
+}
+
+function pendingMeasurement(
+  definition: ImpactMetricDefinition,
+  scope: ImpactScope,
+  baseline: Reading | null,
+  targetValue: number | null,
+): ImpactMeasurement {
+  return {
+    metricKey: definition.key,
+    label: `${definition.label} · ${scopeLabel(scope)}`,
+    source: definition.source,
+    scope,
+    baselineValue: baseline?.value ?? null,
+    currentValue: null,
+    targetValue,
+    unit: 'score',
+    baselineDate: baseline?.date ?? null,
+    currentDate: null,
+    baselinePeriod: baseline?.period ?? null,
+    currentPeriod: null,
+    difference: null,
+    percentageChange: null,
+    direction: 'unknown',
+    targetStatus: 'not-measured',
+    progressToTarget: null,
+    baselineSampleSize: baseline?.sampleSize ?? null,
+    currentSampleSize: null,
+    comparisonQuality: 'not-comparable',
+    note: comparisonNote(definition, baseline, null),
+  }
+}
+
 function impactForDemoAction(
   action: HrAction,
   dataset: HrDataset,
@@ -358,6 +492,7 @@ function impactForDemoAction(
 ): ActionImpact {
   const base = {
     actionId: action.id,
+    ...(action.issueId ? { issueId: action.issueId } : {}),
     ...(action.insightId ? { insightId: action.insightId } : {}),
     ...(action.sourceRecommendationId
       ? { sourceRecommendationId: action.sourceRecommendationId }
@@ -368,7 +503,9 @@ function impactForDemoAction(
     owner: action.owner,
     startDate: action.startDate,
     dueDate: action.dueDate,
+    ...(action.completedAt ? { completedAt: action.completedAt } : {}),
     actionStatus: action.status,
+    successMetric: action.successMeasure,
     origin: 'demo-action' as const,
   }
 
@@ -378,7 +515,8 @@ function impactForDemoAction(
   if (!metricKey || !scope) {
     return {
       ...base,
-      measurementStatus: 'insufficient-data',
+      measurementStatus: 'not-comparable',
+      outcomeStatus: 'not-comparable',
       measurement: null,
       interpretation: UNMAPPED_BASELINE_REASON,
       nextMeasurementLabel: 'Not tracked',
@@ -389,32 +527,54 @@ function impactForDemoAction(
 
   const definition = IMPACT_METRICS[metricKey]
 
-  /* The approved baseline, exactly as recorded — never recalculated. */
-  const baseline: Reading | null =
-    action.baselineMetric?.value === null || action.baselineMetric?.value === undefined
-      ? null
-      : { value: action.baselineMetric.value, date: action.startDate }
+  /* The stored value wins; analytics only supplies its period and sample context. */
+  const baseline = baselineForAction(action, definition, scope, dataset, analytics, employeesById)
+  const targetValue = action.targetMetric?.unit === 'score'
+    ? action.targetMetric.value
+    : null
+
+  if (action.status !== 'completed' || !action.completedAt) {
+    const measurement = pendingMeasurement(definition, scope, baseline, targetValue)
+    return {
+      ...base,
+      measurementStatus: 'awaiting-measurement',
+      outcomeStatus: 'awaiting-measurement',
+      measurement,
+      interpretation: buildInterpretation(
+        action.status,
+        measurement,
+        definition.nextMeasurementLabel,
+      ),
+      nextMeasurementLabel: definition.nextMeasurementLabel,
+      dataSources: [definition.source],
+    }
+  }
+
+  const completedDate = action.completedAt.slice(0, 10)
 
   const { measurement, reason } = buildMeasurement({
     definition,
     scope,
-    startDate: action.startDate,
+    measurementAfterDate: completedDate,
     baseline,
-    targetValue: action.targetMetric?.value ?? null,
+    targetValue,
     analytics,
     dataset,
     employeesById,
   })
 
   const measurementStatus = reason
-    ? 'insufficient-data'
+    ? 'not-comparable'
     : measurement?.currentValue === null || measurement === null
       ? 'awaiting-measurement'
-      : 'measurement-available'
+      : measurement.comparisonQuality === 'not-comparable'
+        ? 'not-comparable'
+        : 'measurement-available'
 
   return {
     ...base,
     measurementStatus,
+    outcomeStatus: outcomeStatusFor(measurementStatus, measurement),
     measurement,
     interpretation: buildInterpretation(
       action.status,
@@ -430,11 +590,11 @@ function impactForDemoAction(
 
 /* ------------------------------------------------------- official actions */
 
-const OFFICIAL_STATUS_MAP = {
-  Planned: 'planned',
-  'In Progress': 'in-progress',
-  Completed: 'completed',
-} as const satisfies Record<string, ActionImpact['actionStatus']>
+const OFFICIAL_STATUS_MAP = new Map<string, ActionImpact['actionStatus']>([
+  ['Planned', 'planned'],
+  ['In Progress', 'in-progress'],
+  ['Completed', 'completed'],
+])
 
 /**
  * A retrospective on an official workbook row: its start date is in the past,
@@ -446,7 +606,9 @@ function impactForOfficialAction(
   dataset: HrDataset,
   analytics: HrAnalytics,
   employeesById: Map<string, Employee>,
-): ActionImpact {
+): ActionImpact | null {
+  const actionStatus = OFFICIAL_STATUS_MAP.get(record.status)
+  if (!actionStatus) return null
   const base = {
     actionId: record.actionId,
     actionTitle: record.action,
@@ -456,7 +618,8 @@ function impactForOfficialAction(
     startDate: record.startDate,
     /* Official rows carry no due date; the start date is all the workbook has. */
     dueDate: record.startDate,
-    actionStatus: OFFICIAL_STATUS_MAP[record.status],
+    actionStatus,
+    successMetric: record.successMeasure,
     origin: 'official-dataset' as const,
   }
 
@@ -467,7 +630,8 @@ function impactForOfficialAction(
       'No transparent mapping from this action’s success measure to a metric this workbook records over time.'
     return {
       ...base,
-      measurementStatus: 'insufficient-data',
+      measurementStatus: 'not-comparable',
+      outcomeStatus: 'not-comparable',
       measurement: null,
       interpretation: reason,
       nextMeasurementLabel: 'Impact measurement not configured',
@@ -494,10 +658,27 @@ function impactForOfficialAction(
 
   const targetValue = resolveOfficialTarget(mapping.target, baseline?.value ?? null)
 
+  if (actionStatus !== 'completed') {
+    const measurement = pendingMeasurement(definition, mapping.scope, baseline, targetValue)
+    return {
+      ...base,
+      measurementStatus: 'awaiting-measurement',
+      outcomeStatus: 'awaiting-measurement',
+      measurement,
+      interpretation: buildInterpretation(
+        actionStatus,
+        measurement,
+        definition.nextMeasurementLabel,
+      ),
+      nextMeasurementLabel: definition.nextMeasurementLabel,
+      dataSources: [definition.source, 'Action Tracker'],
+    }
+  }
+
   const { measurement, reason } = buildMeasurement({
     definition,
     scope: mapping.scope,
-    startDate: record.startDate,
+    measurementAfterDate: record.startDate,
     baseline,
     targetValue,
     analytics,
@@ -506,18 +687,21 @@ function impactForOfficialAction(
   })
 
   const measurementStatus = reason
-    ? 'insufficient-data'
+    ? 'not-comparable'
     : measurement?.currentValue === null || measurement === null
       ? 'awaiting-measurement'
-      : 'measurement-available'
+      : measurement.comparisonQuality === 'not-comparable'
+        ? 'not-comparable'
+        : 'measurement-available'
 
   const interpretation = reason
     ? reason
-    : `${buildInterpretation(base.actionStatus, measurement, definition.nextMeasurementLabel)} ${mapping.basis}`
+    : `${buildInterpretation(base.actionStatus, measurement, definition.nextMeasurementLabel, undefined, 'after its recorded start date')} The official tracker has no completion date, so its recorded start date is the only available timing boundary. ${mapping.basis}`
 
   return {
     ...base,
     measurementStatus,
+    outcomeStatus: outcomeStatusFor(measurementStatus, measurement),
     measurement,
     interpretation,
     nextMeasurementLabel: definition.nextMeasurementLabel,
@@ -550,12 +734,16 @@ function summarise(impacts: readonly ActionImpact[]): ImpactSummary {
 
   return {
     actionsTracked: impacts.length,
+    completedActions: impacts.filter((impact) => impact.actionStatus === 'completed').length,
     measurementsAvailable: countStatus('measurement-available'),
+    improved: impacts.filter((impact) => impact.outcomeStatus === 'improved').length,
+    declined: impacts.filter((impact) => impact.outcomeStatus === 'declined').length,
+    noClearChange: impacts.filter((impact) => impact.outcomeStatus === 'no-clear-change').length,
     targetsMet: met,
     partiallyMet,
     notMet,
     awaitingMeasurement: countStatus('awaiting-measurement'),
-    insufficientData: countStatus('insufficient-data'),
+    notComparable: countStatus('not-comparable'),
     /*
      * `null`, never 0%, until enough actions have been judged. 0/0 is not a
      * rate, and a rate off one or two actions reads as a verdict on the
@@ -566,11 +754,11 @@ function summarise(impacts: readonly ActionImpact[]): ImpactSummary {
   }
 }
 
-/** Measured first, then awaiting, then unmeasurable; newest start date first. */
+/** Awaiting first, then measured, then non-comparable; newest relevant date first. */
 const STATUS_ORDER = {
-  'measurement-available': 0,
-  'awaiting-measurement': 1,
-  'insufficient-data': 2,
+  'awaiting-measurement': 0,
+  'measurement-available': 1,
+  'not-comparable': 2,
 } as const
 
 export function calculateActionImpacts(
@@ -585,7 +773,7 @@ export function calculateActionImpacts(
     ...dataset.actions.map((record) =>
       impactForOfficialAction(record, dataset, analytics, employeesById),
     ),
-  ].sort(
+  ].filter((impact) => impact !== null).sort(
     (a, b) =>
       STATUS_ORDER[a.measurementStatus] - STATUS_ORDER[b.measurementStatus] ||
       b.startDate.localeCompare(a.startDate) ||

@@ -3,10 +3,17 @@ import {
   EXIT_METRICS,
   NEW_JOINER_GROUP_LABEL,
   NEW_JOINER_MAX_MONTHS,
+  MIN_ANALYSIS_SAMPLE_SIZE,
+  MEANINGFUL_SCORE_GAP,
+  STRONG_SCORE_GAP,
+  MEANINGFUL_EXIT_SHARE_GAP,
+  STRONG_EXIT_SHARE_GAP,
+  EVIDENCE_EQUALITY_TOLERANCE,
   ONBOARDING_DIMENSIONS,
   ONBOARDING_METRICS,
   PERCENTAGE_PRECISION,
   PULSE_SCORES,
+  PULSE_STABLE_THRESHOLD,
   RATIO_PRECISION,
   SCORE_PRECISION,
   SCORE_SCALE,
@@ -23,8 +30,9 @@ import {
   type PulseScoreKey,
   type TenureBand,
 } from '@/data/hr-analytics.constants'
-import { ACTION_STATUSES, WOULD_RECOMMEND_VALUES } from '@/data/hr-data.constants'
+import { ACTION_STATUSES, WOULD_RECOMMEND_VALUES, getEmployeeExitStatus } from '@/data/hr-data.constants'
 import { validateHrDataset } from '@/services/hr-data-quality.service'
+import { buildSuggestedPriorityIssues } from '@/services/hr-priority.service'
 import type {
   ActionAnalytics,
   ActionScopeMetric,
@@ -32,8 +40,20 @@ import type {
   ChangeDirection,
   ChangeMetric,
   DivisionAnalytics,
+  DivisionAnalysis,
+  CommentThemeMention,
+  DriverCandidate,
+  EvidenceAnalysis,
+  EvidenceItem,
+  EvidenceSource,
+  EvidenceStrength,
+  EvidenceTheme,
+  ExitReasonEvidence,
+  ExitReasonCount,
+  HrEvidenceAnalysis,
   DivisionEmployeeMetric,
   EmployeeAnalytics,
+  EmployeeGroupAnalysis,
   EmployeeCountMetrics,
   EmployeeGroupMetric,
   ExitAnalytics,
@@ -43,6 +63,8 @@ import type {
   ExitScores,
   GroupMetric,
   HrAnalytics,
+  HrAnalysis,
+  HrObservedPatterns,
   MetricValue,
   NewJoinerMetrics,
   OnboardingAnalytics,
@@ -51,16 +73,20 @@ import type {
   OnboardingScores,
   OverviewAnalytics,
   PulseAnalytics,
+  PulsePatternAnalysis,
   PulseComparison,
   PulseGroupTrend,
   PulseScores,
   PulseSegment,
   PulseTrendPoint,
   PulseWave,
+  PulseWaveAnalysis,
   ScoreDirection,
   ScoreInterpretation,
   TenureBandEmployeeMetric,
   TrendPoint,
+  WorkforceMetrics,
+  WorkforceGroupAnalysis,
 } from '@/types/hr-analytics'
 import type {
   ActionRecord,
@@ -73,6 +99,7 @@ import type {
 } from '@/types/hr-data'
 import {
   averageBy,
+  average,
   countBy,
   countWhere,
   groupBy,
@@ -88,27 +115,25 @@ import {
 /**
  * Deterministic HR analytics.
  *
- * CODE calculates the facts here. A later step lets AI *explain* these numbers;
- * it never produces them. Same dataset in, same numbers out — no randomness, no
+ * Same dataset in, same numbers out — no randomness, no
  * network, no fallback values. Source arrays are treated as read-only.
  *
  * Invalid-value policy: a survey score outside the documented 1–5 scale (which
- * includes the `0` the parser writes for a blank cell) is excluded from that
+ * includes missing or invalid cells represented as `null`) is excluded from that
  * one average rather than counted as zero, and an average with nothing valid
  * left is `null`, never `0`. The exclusions are reported in `dataQuality`.
  */
 
 /* ------------------------------------------------------------------ helpers */
 
-const validScore = (value: number): number | null => (isValidScore(value) ? value : null)
+const validScore = (value: number | null): number | null => (isValidScore(value) ? value : null)
 
-const validRatio = (value: number): number | null => (isValidBaseEngagement(value) ? value : null)
+const validRatio = (value: number | null): number | null => (isValidBaseEngagement(value) ? value : null)
 
 const toNullableDate = (value: string): string | null => (value.trim() === '' ? null : value)
 
 const nonEmpty = (value: string): string | null => {
-  const text = value.trim()
-  return text === '' ? null : text
+  return value.trim() === '' ? null : value
 }
 
 const roundScore = (value: MetricValue): MetricValue => roundOrNull(value, SCORE_PRECISION)
@@ -125,7 +150,7 @@ export function buildEmployeeIndex(employees: readonly Employee[]): Map<string, 
 /* ---------------------------------------------------------------- employees */
 
 function employeeCountMetrics(employees: readonly Employee[]): EmployeeCountMetrics {
-  const leaverCount = countWhere(employees, (employee) => employee.exitStatus === 'Leaver')
+  const leaverCount = countWhere(employees, (employee) => getEmployeeExitStatus(employee.exitStatus) === 'Leaver')
 
   return {
     employeeCount: employees.length,
@@ -136,6 +161,175 @@ function employeeCountMetrics(employees: readonly Employee[]): EmployeeCountMetr
       averageBy(employees, (employee) => validRatio(employee.baseEngagement)),
       RATIO_PRECISION,
     ),
+  }
+}
+
+export function calculateWorkforceMetrics(employees: readonly Employee[]): WorkforceMetrics {
+  const totals = employeeCountMetrics(employees)
+  return {
+    totalEmployees: totals.employeeCount,
+    activeEmployees: totals.activeCount,
+    leavers: totals.leaverCount,
+    leaverRate: totals.leaverRate,
+    averageBaseEngagement: totals.averageBaseEngagement,
+  }
+}
+
+/** Survey dates determine order; equal or missing dates retain source order. */
+export function comparePulseWaveChronology(
+  a: Pick<PulseWaveAnalysis, 'date' | 'wave'>,
+  b: Pick<PulseWaveAnalysis, 'date' | 'wave'>,
+): number {
+  if (a.date === null && b.date !== null) return -1
+  if (a.date !== null && b.date === null) return 1
+  return (a.date ?? '').localeCompare(b.date ?? '')
+}
+
+export function getPulseTrendDirection(
+  change: number | null,
+): PulsePatternAnalysis['trendDirection'] {
+  if (change === null) return null
+  if (change > PULSE_STABLE_THRESHOLD) return 'up'
+  if (change < -PULSE_STABLE_THRESHOLD) return 'down'
+  return 'stable'
+}
+
+function buildPulsePatternAnalysis(rows: readonly PulseSurvey[]): PulsePatternAnalysis {
+  const waves = [...groupBy(rows, (row) => nonEmpty(row.surveyWave))]
+    .map(([wave, waveRows]): PulseWaveAnalysis => {
+      const validResponses = waveRows.filter((row) => isValidScore(row.engagementScore))
+      const date = waveRows
+        .map((row) => row.surveyDate)
+        .filter((value) => value !== '')
+        .sort((a, b) => a.localeCompare(b))
+        .at(-1) ?? null
+
+      return {
+        wave,
+        date,
+        responseCount: validResponses.length,
+        uniqueRespondentCount: new Set(
+          validResponses.map((row) => row.employeeId).filter((id) => id.trim() !== ''),
+        ).size,
+        averageEngagement: averageBy(validResponses, (row) => row.engagementScore),
+        participationRate: null,
+      }
+    })
+    .sort(comparePulseWaveChronology)
+
+  const comparable = waves.filter((wave) => wave.averageEngagement !== null)
+  const latestWave = comparable.at(-1) ?? null
+  const previousWave = comparable.at(-2) ?? null
+  const latestChange =
+    latestWave?.averageEngagement != null && previousWave?.averageEngagement != null
+      ? latestWave.averageEngagement - previousWave.averageEngagement
+      : null
+
+  return {
+    waves,
+    latestWave,
+    previousWave,
+    latestChange,
+    trendDirection: getPulseTrendDirection(latestChange),
+  }
+}
+
+function buildWorkforceGroupAnalysis(
+  employees: readonly Employee[],
+  latestPulseRows: readonly PulseSurvey[],
+  employeeIndex: Map<string, Employee>,
+  getKey: (employee: Employee) => string,
+  companyPulseEngagement: MetricValue,
+  companyLeaverRate: MetricValue,
+): (WorkforceGroupAnalysis & { group: string })[] {
+  const groupedEmployees = groupBy(employees, (employee) => nonEmpty(getKey(employee)))
+  const groupedResponses = groupBy(latestPulseRows, (row) => {
+    const employee = employeeIndex.get(row.employeeId)
+    return employee ? nonEmpty(getKey(employee)) : null
+  })
+
+  return [...groupedEmployees].map(([group, groupEmployees]) => {
+    const responses = groupedResponses.get(group) ?? []
+    const counts = employeeCountMetrics(groupEmployees)
+    const latestPulseEngagement = averageBy(responses, (row) => row.engagementScore)
+    const difference =
+      latestPulseEngagement !== null && companyPulseEngagement !== null
+        ? latestPulseEngagement - companyPulseEngagement
+        : null
+
+    return {
+      group,
+      ...counts,
+      latestPulseEngagement,
+      latestPulseResponseCount: responses.length,
+      engagementDifferenceFromCompany: difference,
+      isSmallSample: responses.length < MIN_ANALYSIS_SAMPLE_SIZE,
+      belowCompanyAverage: difference !== null && difference < 0,
+      aboveCompanyLeaverRate:
+        counts.leaverRate !== null &&
+        companyLeaverRate !== null &&
+        counts.leaverRate > companyLeaverRate,
+    }
+  })
+}
+
+function buildObservedPatterns(
+  divisions: readonly DivisionAnalysis[],
+  employeeGroups: readonly EmployeeGroupAnalysis[],
+  pulse: PulsePatternAnalysis,
+): HrObservedPatterns {
+  const lowestEngagementDivision =
+    sortAscending(divisions, (entry) => entry.latestPulseEngagement)
+      .find((entry) => entry.latestPulseEngagement !== null) ?? null
+  const highestLeaverRateDivision =
+    sortDescending(divisions, (entry) => entry.leaverRate)
+      .find((entry) => entry.leaverRate !== null) ?? null
+  const lowestEngagementEmployeeGroup =
+    sortAscending(employeeGroups, (entry) => entry.latestPulseEngagement)
+      .find((entry) => entry.latestPulseEngagement !== null) ?? null
+  const comparableWaves = pulse.waves.filter((wave) => wave.averageEngagement !== null)
+  const changes = comparableWaves.flatMap((wave, index) => {
+    const previous = comparableWaves[index - 1]
+    if (wave.averageEngagement === null || previous?.averageEngagement == null) return []
+    const change = wave.averageEngagement - previous.averageEngagement
+    return change < 0 ? [{ fromWave: previous.wave, toWave: wave.wave, change }] : []
+  })
+  const largestNegativePulseChange =
+    sortAscending(changes, (entry) => entry.change)[0] ?? null
+
+  const signals: HrObservedPatterns['signals'] = []
+  if (lowestEngagementDivision?.latestPulseEngagement != null && pulse.latestWave?.averageEngagement != null) {
+    signals.push({
+      id: 'division-engagement',
+      message: `${lowestEngagementDivision.division} recorded ${lowestEngagementDivision.latestPulseEngagement.toFixed(2)} / 5 in the latest pulse, compared with ${pulse.latestWave.averageEngagement.toFixed(2)} / 5 company-wide (n = ${lowestEngagementDivision.latestPulseResponseCount}${lowestEngagementDivision.isSmallSample ? ', small sample' : ''}).`,
+    })
+  }
+  if (lowestEngagementEmployeeGroup?.latestPulseEngagement != null && pulse.latestWave?.averageEngagement != null) {
+    signals.push({
+      id: 'employee-group-engagement',
+      message: `${lowestEngagementEmployeeGroup.group} recorded ${lowestEngagementEmployeeGroup.latestPulseEngagement.toFixed(2)} / 5 in the latest pulse, compared with ${pulse.latestWave.averageEngagement.toFixed(2)} / 5 company-wide (n = ${lowestEngagementEmployeeGroup.latestPulseResponseCount}${lowestEngagementEmployeeGroup.isSmallSample ? ', small sample' : ''}).`,
+    })
+  }
+  if (pulse.latestChange !== null && pulse.latestWave && pulse.previousWave) {
+    signals.push({
+      id: 'pulse-change',
+      message: `Company pulse engagement changed by ${pulse.latestChange > 0 ? '+' : ''}${pulse.latestChange.toFixed(2)} points from ${pulse.previousWave.wave} to ${pulse.latestWave.wave} (n = ${pulse.latestWave.responseCount} in the latest wave).`,
+    })
+  }
+  if (highestLeaverRateDivision?.leaverRate != null) {
+    signals.push({
+      id: 'division-leavers',
+      message: `${highestLeaverRateDivision.division} recorded the highest division leaver rate at ${highestLeaverRateDivision.leaverRate.toFixed(2)}% (${highestLeaverRateDivision.leaverCount} of ${highestLeaverRateDivision.employeeCount} employees).`,
+    })
+  }
+
+  return {
+    lowestEngagementDivision,
+    highestLeaverRateDivision,
+    lowestEngagementEmployeeGroup,
+    largestNegativePulseChange,
+    pulseDeclining: pulse.trendDirection === 'down',
+    signals,
   }
 }
 
@@ -163,8 +357,10 @@ function newJoinerMetrics(employees: readonly Employee[]): NewJoinerMetrics {
   }
 }
 
-function calculateEmployeeAnalytics(employees: readonly Employee[]): EmployeeAnalytics {
-  const totals = employeeCountMetrics(employees)
+function calculateEmployeeAnalytics(
+  employees: readonly Employee[],
+  workforce: WorkforceMetrics,
+): EmployeeAnalytics {
 
   const byDivision: DivisionEmployeeMetric[] = employeeBreakdown(employees, (employee) =>
     nonEmpty(employee.division),
@@ -178,12 +374,8 @@ function calculateEmployeeAnalytics(employees: readonly Employee[]): EmployeeAna
   }))
 
   return {
-    totalEmployees: totals.employeeCount,
-    activeEmployees: totals.activeCount,
-    leavers: totals.leaverCount,
-    activeRate: rate(totals.activeCount, totals.employeeCount),
-    leaverRate: totals.leaverRate,
-    averageBaseEngagement: totals.averageBaseEngagement,
+    ...workforce,
+    activeRate: rate(workforce.activeEmployees, workforce.totalEmployees),
     byDivision,
     byEmployeeGroup: employeeBreakdown(employees, (employee) => nonEmpty(employee.employeeGroup)),
     byLocation: employeeBreakdown(employees, (employee) => nonEmpty(employee.location)),
@@ -461,7 +653,7 @@ function calculatePulseAnalytics(
   employeeIndex: Map<string, Employee>,
   dictionary: readonly DataDictionaryEntry[],
 ): PulseAnalytics {
-  const waveAggregates = aggregateWaves(rows)
+  const waveAggregates = [...aggregateWaves(rows)].sort(comparePulseWaveChronology)
   const trend = waveAggregates.map(toTrendPoint)
   const averages = roundPulseScores(rawPulseScores(rows))
 
@@ -558,7 +750,7 @@ function calculateExitAnalytics(
       employeeId: row.employeeId,
       division: nonEmpty(employeeIndex.get(row.employeeId)?.division ?? ''),
       primaryExitReason: row.primaryExitReason,
-      comment: row.comment.trim(),
+      comment: row.comment,
     }))
 
   return {
@@ -704,10 +896,487 @@ function buildOverview(
 
 /* --------------------------------------------------------------------- root */
 
-export function calculateHrAnalytics(dataset: HrDataset): HrAnalytics {
-  const employeeIndex = buildEmployeeIndex(dataset.employees)
+type DimensionSpec<T> = {
+  metric: string
+  label: string
+  theme: EvidenceTheme
+  better: 'higher' | 'lower' | 'unknown'
+  read: (row: T) => number | null
+}
 
-  const employees = calculateEmployeeAnalytics(dataset.employees)
+type DimensionStats = { value: MetricValue; sampleSize: number }
+
+const PULSE_EVIDENCE_DIMENSIONS: readonly DimensionSpec<PulseSurvey>[] = [
+  { metric: 'engagementScore', label: 'Engagement', theme: 'engagement', better: 'higher', read: (row) => row.engagementScore },
+  { metric: 'managerSupport', label: 'Manager Support', theme: 'managerSupport', better: 'higher', read: (row) => row.managerSupport },
+  { metric: 'workload', label: 'Workload Pressure', theme: 'workload', better: 'lower', read: (row) => row.workload },
+  { metric: 'careerGrowth', label: 'Career Growth', theme: 'careerGrowth', better: 'higher', read: (row) => row.careerGrowth },
+  { metric: 'belonging', label: 'Belonging', theme: 'belonging', better: 'higher', read: (row) => row.belonging },
+]
+
+const ONBOARDING_EVIDENCE_DIMENSIONS: readonly DimensionSpec<OnboardingSurvey>[] = [
+  { metric: 'overallScore', label: 'Overall Onboarding', theme: 'onboardingOverall', better: 'higher', read: (row) => row.overallScore },
+  { metric: 'managerSupport', label: 'Manager Support', theme: 'managerSupport', better: 'higher', read: (row) => row.managerSupport },
+  { metric: 'roleClarity', label: 'Role Clarity', theme: 'roleClarity', better: 'higher', read: (row) => row.roleClarity },
+  { metric: 'toolsAccess', label: 'Tools Access', theme: 'toolsAccess', better: 'higher', read: (row) => row.toolsAccess },
+]
+
+const EXIT_EVIDENCE_DIMENSIONS: readonly DimensionSpec<ExitSurvey>[] = [
+  { metric: 'overallExperience', label: 'Overall Exit Experience', theme: 'exitOverall', better: 'higher', read: (row) => row.overallExperience },
+  { metric: 'managerSupport', label: 'Manager Support', theme: 'managerSupport', better: 'higher', read: (row) => row.managerSupport },
+  { metric: 'careerOpportunity', label: 'Career Opportunity', theme: 'careerGrowth', better: 'higher', read: (row) => row.careerOpportunity },
+  { metric: 'workload', label: 'Exit Workload Rating', theme: 'exitWorkload', better: 'unknown', read: (row) => row.workload },
+]
+
+/** Only direct field matches or closely corresponding survey concepts share a theme. */
+const DRIVER_THEME_LABELS: Partial<Record<EvidenceTheme, string>> = {
+  managerSupport: 'Manager Support',
+  careerGrowth: 'Career Growth / Opportunity',
+  belonging: 'Belonging',
+  workload: 'Workload Pressure',
+  roleClarity: 'Role Clarity',
+  toolsAccess: 'Tools Access',
+}
+
+const COMMENT_THEME_KEYWORDS: readonly {
+  theme: EvidenceTheme
+  label: string
+  keywords: readonly string[]
+}[] = [
+  { theme: 'managerSupport', label: 'Manager Support', keywords: ['manager', 'supervisor'] },
+  { theme: 'careerGrowth', label: 'Career Growth', keywords: ['career', 'promotion', 'progression', 'growth'] },
+  { theme: 'toolsAccess', label: 'Tools Access', keywords: ['access', 'tool', 'tools', 'login', 'system'] },
+  { theme: 'roleClarity', label: 'Role Clarity', keywords: ['role clarity', 'unclear role', 'responsibilities'] },
+  { theme: 'workload', label: 'Workload', keywords: ['workload', 'overload', 'overtime'] },
+  { theme: 'belonging', label: 'Belonging', keywords: ['belonging', 'team fit'] },
+]
+
+/** Structured exit reasons are mapped conservatively; unrecognised reasons remain ungrouped. */
+const EXIT_REASON_THEME_KEYWORDS: readonly {
+  theme: EvidenceTheme
+  keywords: readonly string[]
+}[] = [
+  { theme: 'careerGrowth', keywords: ['career', 'promotion', 'growth', 'opportunity'] },
+  { theme: 'managerSupport', keywords: ['manager', 'supervisor'] },
+  { theme: 'workload', keywords: ['workload', 'overtime'] },
+]
+
+const normaliseForMatching = (value: string): string =>
+  value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+const containsKeyword = (normalisedText: string, keyword: string): boolean =>
+  ` ${normalisedText} `.includes(` ${keyword} `)
+
+function dimensionStats<T>(rows: readonly T[], spec: DimensionSpec<T>): DimensionStats {
+  const valid = rows.map(spec.read).filter(isValidScore)
+  return { value: average(valid), sampleSize: valid.length }
+}
+
+function companyDimensionStats<T>(
+  rows: readonly T[],
+  specs: readonly DimensionSpec<T>[],
+): Map<string, DimensionStats> {
+  return new Map(specs.map((spec) => [spec.metric, dimensionStats(rows, spec)]))
+}
+
+function classifyItemStrength(
+  difference: MetricValue,
+  unit: EvidenceItem['unit'],
+  sampleSize: number,
+  companySampleSize: number,
+  supportsPattern: boolean,
+): EvidenceStrength {
+  if (!supportsPattern || difference === null ||
+      sampleSize < MIN_ANALYSIS_SAMPLE_SIZE || companySampleSize < MIN_ANALYSIS_SAMPLE_SIZE) {
+    return 'limited'
+  }
+  const meaningful = unit === 'score'
+    ? Math.abs(difference) >= MEANINGFUL_SCORE_GAP
+    : difference >= MEANINGFUL_EXIT_SHARE_GAP
+  return meaningful ? 'moderate' : 'limited'
+}
+
+function scoreEvidenceItems<T>(
+  source: EvidenceSource,
+  groupRows: readonly T[],
+  specs: readonly DimensionSpec<T>[],
+  companyStats: Map<string, DimensionStats>,
+): EvidenceItem[] {
+  return specs.map((spec): EvidenceItem => {
+    const group = dimensionStats(groupRows, spec)
+    const company = companyStats.get(spec.metric) ?? { value: null, sampleSize: 0 }
+    const difference =
+      group.value !== null && company.value !== null ? group.value - company.value : null
+    const direction =
+      difference === null
+        ? 'not_comparable'
+        : Math.abs(difference) < EVIDENCE_EQUALITY_TOLERANCE
+          ? 'same'
+          : difference < 0 ? 'lower' : 'higher'
+    const isSmallSample = group.sampleSize < MIN_ANALYSIS_SAMPLE_SIZE
+    const supportsPattern =
+      difference !== null &&
+      (spec.better === 'higher' && difference < -EVIDENCE_EQUALITY_TOLERANCE ||
+        spec.better === 'lower' && difference > EVIDENCE_EQUALITY_TOLERANCE) &&
+      spec.theme !== 'engagement' && spec.theme !== 'onboardingOverall' &&
+      spec.theme !== 'exitOverall'
+    const strength = classifyItemStrength(
+      difference, 'score', group.sampleSize, company.sampleSize, supportsPattern,
+    )
+
+    const note = difference === null
+      ? `${spec.label} has no comparable ${source} score for this group.`
+      : `${spec.label} is ${Math.abs(difference).toFixed(2)} points ${direction} than the company ${source} average (n = ${group.sampleSize}; company n = ${company.sampleSize})${isSmallSample ? '; small sample' : ''}.`
+
+    return {
+      id: `${source}:${spec.metric}`,
+      source,
+      theme: spec.theme,
+      metric: spec.metric,
+      label: spec.label,
+      unit: 'score',
+      groupValue: group.value,
+      companyValue: company.value,
+      difference,
+      sampleSize: group.sampleSize,
+      companySampleSize: company.sampleSize,
+      direction,
+      strength,
+      isSmallSample,
+      supportsPattern,
+      note,
+    }
+  })
+}
+
+function exitReasonEvidence(
+  groupRows: readonly ExitSurvey[],
+  companyRows: readonly ExitSurvey[],
+  companyCounts: Map<string, number>,
+): ExitReasonEvidence[] {
+  const validGroup = groupRows.filter((row) => nonEmpty(row.primaryExitReason) !== null)
+  const groupCounts = countBy(validGroup, (row) => nonEmpty(row.primaryExitReason))
+
+  return sortDescending(
+    [...groupCounts].map(([reason, count]) => {
+      const share = percentage(count, validGroup.length)
+      const companyCount = companyCounts.get(reason) ?? 0
+      const companyShare = percentage(companyCount, companyRows.length)
+      const normalisedReason = normaliseForMatching(reason)
+      const theme = EXIT_REASON_THEME_KEYWORDS.find((entry) =>
+        entry.keywords.some((keyword) => containsKeyword(normalisedReason, keyword)),
+      )?.theme ?? null
+
+      return {
+        reason,
+        count,
+        share,
+        sampleSize: validGroup.length,
+        companyCount,
+        companyShare,
+        difference: share !== null && companyShare !== null ? share - companyShare : null,
+        theme,
+      }
+    }),
+    (entry) => entry.count,
+  )
+}
+
+function exitReasonItems(
+  reasons: readonly ExitReasonEvidence[],
+  companySampleSize: number,
+): EvidenceItem[] {
+  return reasons.filter((reason) => reason.theme !== null).map((reason): EvidenceItem => {
+    const difference = reason.difference
+    const isSmallSample = reason.sampleSize < MIN_ANALYSIS_SAMPLE_SIZE
+    const supportsPattern = difference !== null && difference > EVIDENCE_EQUALITY_TOLERANCE
+    const direction = difference === null
+      ? 'not_comparable'
+      : Math.abs(difference) < EVIDENCE_EQUALITY_TOLERANCE
+        ? 'same'
+        : difference < 0 ? 'lower' : 'higher'
+
+    return {
+      id: `exit:reason:${reason.reason}`,
+      source: 'exit',
+      theme: reason.theme as EvidenceTheme,
+      metric: reason.reason,
+      label: `Exit reason: ${reason.reason}`,
+      unit: 'percentage',
+      groupValue: reason.share,
+      companyValue: reason.companyShare,
+      difference,
+      sampleSize: reason.sampleSize,
+      companySampleSize,
+      direction,
+      strength: classifyItemStrength(
+        difference, 'percentage', reason.sampleSize, companySampleSize, supportsPattern,
+      ),
+      isSmallSample,
+      supportsPattern,
+      note: `${reason.count} of ${reason.sampleSize} exit-survey responses in this group recorded “${reason.reason}” (${reason.share?.toFixed(1) ?? '—'}%; company ${reason.companyShare?.toFixed(1) ?? '—'}%)${isSmallSample ? '; small sample' : ''}.`,
+    }
+  })
+}
+
+function commentThemeMentions<T extends { comment: string }>(
+  source: EvidenceSource,
+  rows: readonly T[],
+): CommentThemeMention[] {
+  const comments = rows
+    .map((row) => row.comment)
+    .filter((comment) => comment.trim() !== '')
+    .map(normaliseForMatching)
+
+  return COMMENT_THEME_KEYWORDS.flatMap(({ theme, label, keywords }) => {
+    const mentionCount = comments.filter((comment) =>
+      keywords.some((keyword) => containsKeyword(comment, keyword)),
+    ).length
+    if (mentionCount === 0) return []
+    return [{
+      source,
+      theme,
+      label,
+      mentionCount,
+      totalComments: comments.length,
+      percentage: percentage(mentionCount, comments.length),
+      sampleSize: comments.length,
+      isSmallSample: comments.length < MIN_ANALYSIS_SAMPLE_SIZE,
+    }]
+  })
+}
+
+function isMeaningfulEvidence(item: EvidenceItem): boolean {
+  return item.supportsPattern && item.strength === 'moderate'
+}
+
+function buildDriverCandidates(
+  items: readonly EvidenceItem[],
+  commentMentions: readonly CommentThemeMention[],
+): DriverCandidate[] {
+  const byTheme = groupBy(items.filter((item) => item.supportsPattern), (item) => item.theme)
+  return [...byTheme].map(([theme, themeItems]) => {
+    const meaningful = themeItems.filter(isMeaningfulEvidence)
+    const ordered = [
+      ...sortDescending(meaningful, (item) => Math.abs(item.difference ?? 0)),
+      ...sortDescending(
+        themeItems.filter((item) => !meaningful.includes(item)),
+        (item) => Math.abs(item.difference ?? 0),
+      ),
+    ]
+    const meaningfulSources = new Set(meaningful.map((item) => item.source))
+    const hasStrongGap = meaningful.some((item) =>
+      item.unit === 'score'
+        ? Math.abs(item.difference ?? 0) >= STRONG_SCORE_GAP
+        : (item.difference ?? 0) >= STRONG_EXIT_SHARE_GAP,
+    )
+    const strength: EvidenceStrength = meaningfulSources.size >= 2 && hasStrongGap
+      ? 'strong'
+      : meaningful.length > 0 ? 'moderate' : 'limited'
+    const sources = [...new Set(themeItems.map((item) => item.source))]
+    const first = ordered[0]
+    const relatedSources = sources.filter((source) => source !== first.source)
+
+    return {
+      theme,
+      label: DRIVER_THEME_LABELS[theme] ?? first.label,
+      sources,
+      evidenceItems: ordered,
+      commentMentions: commentMentions.filter((mention) => mention.theme === theme),
+      sampleSize: Math.min(...(meaningful.length > 0 ? meaningful : themeItems).map((item) => item.sampleSize)),
+      strength,
+      summary: relatedSources.length > 0
+        ? `${first.note} Related measures also differ in ${relatedSources.join(' and ')} responses. These are supporting signals, not a causal finding.`
+        : `${first.note} This is a related signal, not a causal finding.`,
+    }
+  }).sort((a, b) => {
+    const rank: Record<EvidenceStrength, number> = { strong: 0, moderate: 1, limited: 2 }
+    return rank[a.strength] - rank[b.strength] || a.label.localeCompare(b.label)
+  })
+}
+
+function groupSurveyRows<T extends { employeeId: string }>(
+  rows: readonly T[],
+  employeeIndex: Map<string, Employee>,
+  getKey: (employee: Employee) => string,
+): Map<string, T[]> {
+  return groupBy(rows, (row) => {
+    const employee = employeeIndex.get(row.employeeId)
+    return employee ? nonEmpty(getKey(employee)) : null
+  })
+}
+
+function buildHrEvidenceAnalysis(
+  dataset: HrDataset,
+  latestPulseRows: readonly PulseSurvey[],
+  employeeIndex: Map<string, Employee>,
+  divisions: readonly DivisionAnalysis[],
+  employeeGroups: readonly EmployeeGroupAnalysis[],
+  patterns: HrObservedPatterns,
+): HrEvidenceAnalysis {
+  const companyPulse = companyDimensionStats(latestPulseRows, PULSE_EVIDENCE_DIMENSIONS)
+  const companyOnboarding = companyDimensionStats(dataset.onboardingSurveys, ONBOARDING_EVIDENCE_DIMENSIONS)
+  const companyExit = companyDimensionStats(dataset.exitSurveys, EXIT_EVIDENCE_DIMENSIONS)
+  const validCompanyReasons = dataset.exitSurveys.filter((row) => nonEmpty(row.primaryExitReason) !== null)
+  const companyReasonCounts = countBy(validCompanyReasons, (row) => nonEmpty(row.primaryExitReason))
+  const companyExitReasons: ExitReasonCount[] = sortDescending(
+    [...companyReasonCounts].map(([reason, count]) => ({
+      reason,
+      count,
+      share: percentage(count, validCompanyReasons.length),
+      sampleSize: validCompanyReasons.length,
+    })),
+    (entry) => entry.count,
+  )
+
+  function forScope(
+    scope: EvidenceAnalysis['scope'],
+    names: readonly string[],
+    getKey: (employee: Employee) => string,
+  ): EvidenceAnalysis[] {
+    const pulseGroups = groupSurveyRows(latestPulseRows, employeeIndex, getKey)
+    const onboardingGroups = groupSurveyRows(dataset.onboardingSurveys, employeeIndex, getKey)
+    const exitGroups = groupSurveyRows(dataset.exitSurveys, employeeIndex, getKey)
+
+    return names.map((group) => {
+      const pulseRows = pulseGroups.get(group) ?? []
+      const onboardingRows = onboardingGroups.get(group) ?? []
+      const exitRows = exitGroups.get(group) ?? []
+      const pulse = scoreEvidenceItems('pulse', pulseRows, PULSE_EVIDENCE_DIMENSIONS, companyPulse)
+      const onboarding = scoreEvidenceItems('onboarding', onboardingRows, ONBOARDING_EVIDENCE_DIMENSIONS, companyOnboarding)
+      const exitReasons = exitReasonEvidence(exitRows, validCompanyReasons, companyReasonCounts)
+      const exit = [
+        ...scoreEvidenceItems('exit', exitRows, EXIT_EVIDENCE_DIMENSIONS, companyExit),
+        ...exitReasonItems(exitReasons, validCompanyReasons.length),
+      ]
+      const commentThemes = [
+        ...commentThemeMentions('pulse', pulseRows),
+        ...commentThemeMentions('onboarding', onboardingRows),
+        ...commentThemeMentions('exit', exitRows),
+      ]
+      const weakDimensions = sortDescending(
+        [...pulse, ...onboarding, ...exit].filter((item) =>
+          item.unit === 'score' && item.supportsPattern),
+        (item) => Math.abs(item.difference ?? 0),
+      )
+
+      return {
+        scope,
+        group,
+        weakDimensions,
+        pulse,
+        onboarding,
+        exit,
+        exitReasons,
+        commentThemes,
+        driverCandidates: buildDriverCandidates([...pulse, ...onboarding, ...exit], commentThemes),
+      }
+    })
+  }
+
+  const evidenceDivisions = forScope('division', divisions.map((entry) => entry.division), (employee) => employee.division)
+  const evidenceGroups = forScope('employeeGroup', employeeGroups.map((entry) => entry.group), (employee) => employee.employeeGroup)
+  const divisionIndex = new Map(evidenceDivisions.map((entry) => [entry.group, entry]))
+  const groupIndex = new Map(evidenceGroups.map((entry) => [entry.group, entry]))
+  const patternEvidenceById: Record<string, EvidenceAnalysis> = {}
+  const lowestDivision = patterns.lowestEngagementDivision
+  const highestLeaverDivision = patterns.highestLeaverRateDivision
+  const lowestGroup = patterns.lowestEngagementEmployeeGroup
+  if (lowestDivision) {
+    const evidence = divisionIndex.get(lowestDivision.division)
+    if (evidence) patternEvidenceById['division-engagement'] = evidence
+  }
+  if (highestLeaverDivision) {
+    const evidence = divisionIndex.get(highestLeaverDivision.division)
+    if (evidence) patternEvidenceById['division-leavers'] = evidence
+  }
+  if (lowestGroup) {
+    const evidence = groupIndex.get(lowestGroup.group)
+    if (evidence) patternEvidenceById['employee-group-engagement'] = evidence
+  }
+
+  return {
+    companyExitReasons,
+    divisions: evidenceDivisions,
+    employeeGroups: evidenceGroups,
+    patternEvidenceById,
+  }
+}
+
+const analysisCache = new WeakMap<HrDataset, HrAnalysis>()
+const analyticsCache = new WeakMap<HrDataset, HrAnalytics>()
+const employeeIndexCache = new WeakMap<HrDataset, Map<string, Employee>>()
+
+function getEmployeeIndex(dataset: HrDataset): Map<string, Employee> {
+  const cached = employeeIndexCache.get(dataset)
+  if (cached) return cached
+  const index = buildEmployeeIndex(dataset.employees)
+  employeeIndexCache.set(dataset, index)
+  return index
+}
+
+/** Foundation only; no insights, priorities or recommendations are calculated here. */
+export function calculateHrAnalysis(dataset: HrDataset): HrAnalysis {
+  const cached = analysisCache.get(dataset)
+  if (cached) return cached
+  const workforce = calculateWorkforceMetrics(dataset.employees)
+  const pulse = buildPulsePatternAnalysis(dataset.pulseSurveys)
+  const employeeIndex = getEmployeeIndex(dataset)
+  const latestPulseWaveRows = pulse.latestWave
+    ? dataset.pulseSurveys.filter(
+        (row) => row.surveyWave === pulse.latestWave?.wave,
+      )
+    : []
+  const latestPulseRows = latestPulseWaveRows.filter((row) => isValidScore(row.engagementScore))
+  const groupArgs = [
+    dataset.employees,
+    latestPulseRows,
+    employeeIndex,
+  ] as const
+  const divisions: DivisionAnalysis[] = buildWorkforceGroupAnalysis(
+    ...groupArgs,
+    (employee) => employee.division,
+    pulse.latestWave?.averageEngagement ?? null,
+    workforce.leaverRate,
+  ).map(({ group, ...metrics }) => ({ division: group, ...metrics }))
+  const employeeGroups: EmployeeGroupAnalysis[] = buildWorkforceGroupAnalysis(
+    ...groupArgs,
+    (employee) => employee.employeeGroup,
+    pulse.latestWave?.averageEngagement ?? null,
+    workforce.leaverRate,
+  )
+  const patterns = buildObservedPatterns(divisions, employeeGroups, pulse)
+  const baseAnalysis: Omit<HrAnalysis, 'priorities'> = {
+    workforce,
+    divisions: sortAscending(divisions, (entry) => entry.latestPulseEngagement),
+    employeeGroups: sortAscending(employeeGroups, (entry) => entry.latestPulseEngagement),
+    pulse,
+    patterns,
+    evidence: buildHrEvidenceAnalysis(
+      dataset,
+      latestPulseWaveRows,
+      employeeIndex,
+      divisions,
+      employeeGroups,
+      patterns,
+    ),
+    dataQuality: validateHrDataset(dataset),
+  }
+  const analysis: HrAnalysis = {
+    ...baseAnalysis,
+    priorities: buildSuggestedPriorityIssues(baseAnalysis),
+  }
+  analysisCache.set(dataset, analysis)
+  return analysis
+}
+
+export function calculateHrAnalytics(dataset: HrDataset): HrAnalytics {
+  const cached = analyticsCache.get(dataset)
+  if (cached) return cached
+  const foundation = calculateHrAnalysis(dataset)
+  const employeeIndex = getEmployeeIndex(dataset)
+
+  const employees = calculateEmployeeAnalytics(dataset.employees, foundation.workforce)
   const onboarding = calculateOnboardingAnalytics(dataset.onboardingSurveys, employeeIndex)
   const pulse = calculatePulseAnalytics(
     dataset.pulseSurveys,
@@ -717,7 +1386,8 @@ export function calculateHrAnalytics(dataset: HrDataset): HrAnalytics {
   const exits = calculateExitAnalytics(dataset.exitSurveys, employeeIndex)
   const actions = calculateActionAnalytics(dataset.actions)
 
-  return {
+  const analytics: HrAnalytics = {
+    ...foundation,
     overview: buildOverview(employees, onboarding, pulse, exits, actions),
     employees,
     onboarding,
@@ -725,7 +1395,6 @@ export function calculateHrAnalytics(dataset: HrDataset): HrAnalytics {
     exits,
     actions,
     divisions: buildDivisionRollup(employees, onboarding, pulse, exits),
-    dataQuality: validateHrDataset(dataset),
     meta: {
       scoreScale: SCORE_SCALE,
       baseEngagementScale: BASE_ENGAGEMENT_SCALE,
@@ -740,5 +1409,6 @@ export function calculateHrAnalytics(dataset: HrDataset): HrAnalytics {
       },
     },
   }
+  analyticsCache.set(dataset, analytics)
+  return analytics
 }
-

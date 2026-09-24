@@ -3,14 +3,6 @@ import { ActionStatusBadge } from '@/components/actions/action-status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ACTION_STATUS_LABELS, ACTION_STATUS_OPTIONS } from '@/data/hr-action-catalog'
 import { ACTION_REMINDER_LABELS, actionReminderState } from '@/data/hr-automation-rules'
 import type { ActionExecutionStatus, HrAction } from '@/types/hr-actions'
 import { formatDate } from '@/utils/format'
@@ -25,7 +17,7 @@ type ActiveActionCardProps = {
 
 /**
  * An approved demo action. Everything accountable is on the face of the card:
- * what happens, who owns it, when it is due, and how we will know it worked.
+ * what happens, who owns it, when it is due, and what HR plans to check.
  */
 export function ActiveActionCard({
   action,
@@ -89,21 +81,21 @@ export function ActiveActionCard({
         </div>
 
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t pt-3">
-          <Select
-            value={action.status}
-            onValueChange={(value) => onStatusChange(action.id, value as ActionExecutionStatus)}
-          >
-            <SelectTrigger className="w-[9.5rem]" aria-label={`Status for ${action.title}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ACTION_STATUS_OPTIONS.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {ACTION_STATUS_LABELS[status]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {action.status === 'planned' ? (
+            <Button size="sm" onClick={() => onStatusChange(action.id, 'in-progress')}>
+              Start Action
+            </Button>
+          ) : null}
+          {action.status === 'in-progress' ? (
+            <Button size="sm" onClick={() => onStatusChange(action.id, 'completed')}>
+              Mark Complete
+            </Button>
+          ) : null}
+          {action.status === 'planned' || action.status === 'in-progress' ? (
+            <Button variant="ghost" size="sm" onClick={() => onStatusChange(action.id, 'cancelled')}>
+              Cancel Action
+            </Button>
+          ) : null}
           <Button variant="outline" size="sm" onClick={() => onOpenDetail(action)}>
             View details
           </Button>

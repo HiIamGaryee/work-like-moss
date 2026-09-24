@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress'
 import { ACTION_RECORD_LIMIT } from '@/data/dashboard.constants'
 import type { ActionAnalytics } from '@/types/hr-analytics'
-import type { ActionStatus } from '@/types/hr-data'
 import { formatCount, formatPercentage } from '@/utils/format'
 
 type ActionProgressProps = {
@@ -16,11 +15,11 @@ type ActionProgressProps = {
 }
 
 /** Monochrome only — status is read from the word, not from a colour. */
-const STATUS_VARIANTS: Record<ActionStatus, 'default' | 'secondary' | 'outline'> = {
-  Completed: 'default',
-  'In Progress': 'secondary',
-  Planned: 'outline',
-}
+const STATUS_VARIANTS = new Map<string, 'default' | 'secondary' | 'outline'>([
+  ['Completed', 'default'],
+  ['In Progress', 'secondary'],
+  ['Planned', 'outline'],
+])
 
 const SUMMARY_FIELDS = [
   { key: 'totalActions', label: 'Total' },
@@ -76,7 +75,7 @@ export function ActionProgress({ actions, pendingRecommendations }: ActionProgre
                       {record.owner} · {record.scope}
                     </p>
                   </div>
-                  <Badge variant={STATUS_VARIANTS[record.status]} className="shrink-0">
+                  <Badge variant={STATUS_VARIANTS.get(record.status) ?? 'outline'} className="shrink-0">
                     {record.status}
                   </Badge>
                 </li>

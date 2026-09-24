@@ -37,7 +37,7 @@ export function ActionSummary({ recommendations, activeActions }: ActionSummaryP
   ]
 
   const progressItems: SummaryItem[] = [
-    { key: 'planned', label: 'Planned', value: countActions('planned') },
+    { key: 'planned', label: 'Approved', value: countActions('planned') },
     { key: 'in-progress', label: 'In progress', value: countActions('in-progress') },
     { key: 'completed', label: 'Completed', value: countActions('completed') },
     {

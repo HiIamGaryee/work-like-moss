@@ -4,9 +4,10 @@ import {
   isValidTenure,
   SCORE_SCALE,
 } from '@/data/hr-analytics.constants'
+import { ACTION_STATUSES, WOULD_RECOMMEND_VALUES, getEmployeeExitStatus } from '@/data/hr-data.constants'
 import type { DataQualityReport } from '@/types/hr-analytics'
 import type { ActionRecord, HrDataset } from '@/types/hr-data'
-import { countWhere } from '@/utils/analytics'
+import { countWhere, isFiniteNumber } from '@/utils/analytics'
 
 /**
  * Structural checks that run before any metric is calculated.
@@ -26,7 +27,7 @@ type SurveyCollection = {
 type ScoreCheck = {
   sheet: string
   column: string
-  values: readonly number[]
+  values: readonly (number | null)[]
 }
 
 const REQUIRED_ACTION_FIELDS = [
@@ -36,6 +37,9 @@ const REQUIRED_ACTION_FIELDS = [
   'issue',
   'action',
   'owner',
+  'startDate',
+  'status',
+  'successMeasure',
 ] as const satisfies readonly (keyof ActionRecord)[]
 
 const SHEET_LABELS = {
@@ -50,6 +54,34 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
 
   const { employees, onboardingSurveys, pulseSurveys, exitSurveys, actions } = dataset
 
+  function checkRequired<T>(label: string, rows: readonly T[], fields: readonly (keyof T)[]): void {
+    for (const field of fields) {
+      const missing = countWhere(rows, (row) => row[field] == null || String(row[field]).trim() === '')
+      if (missing > 0) warnings.push(`${label}.${String(field)}: ${missing} row(s) are missing a required field.`)
+    }
+  }
+
+  checkRequired('Employees', employees, ['joinDate'])
+  checkRequired('Onboarding_Survey', onboardingSurveys, ['division', 'employeeGroup', 'joinDate', 'surveyDate'])
+  checkRequired('Pulse_Survey', pulseSurveys, ['surveyWave', 'surveyDate'])
+  checkRequired('Exit_Survey', exitSurveys, ['exitDate', 'primaryExitReason'])
+  checkRequired('Data_Dictionary', dataset.dataDictionary, ['table', 'field', 'description', 'type'])
+  checkRequired('Dataset_Summary', dataset.datasetSummary, ['metric'])
+
+  const unknownStatuses = countWhere(employees, (row) => getEmployeeExitStatus(row.exitStatus) === null)
+  if (unknownStatuses > 0) {
+    errors.push(`Employees: ${unknownStatuses} missing or unknown exit_status value(s); Active + Leaver does not equal totalEmployees. Source statuses are unchanged.`)
+  }
+
+  const categoryChecks = [
+    { label: 'Action_Tracker.Status', values: actions.map((row) => row.status), allowed: ACTION_STATUSES },
+    { label: 'Exit_Survey.Would_Recommend', values: exitSurveys.map((row) => row.wouldRecommend), allowed: WOULD_RECOMMEND_VALUES },
+  ]
+  for (const { label, values, allowed } of categoryChecks) {
+    const invalid = countWhere(values, (value) => !allowed.some((option) => option === value))
+    if (invalid > 0) errors.push(`${label}: ${invalid} missing or unknown value(s); source values are unchanged.`)
+  }
+
   /* identity ------------------------------------------------------------- */
 
   const missingIds = countWhere(employees, (employee) => employee.employeeId.trim() === '')
@@ -61,7 +93,7 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
   const duplicates = new Set<string>()
   for (const employee of employees) {
     const id = employee.employeeId
-    if (id === '') continue
+    if (id.trim() === '') continue
     if (seen.has(id)) duplicates.add(id)
     else seen.add(id)
   }
@@ -82,10 +114,28 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
   ]
 
   for (const { label, ids } of surveys) {
-    const orphans = ids.filter((id) => id === '' || !seen.has(id))
+    const missing = countWhere(ids, (id) => id.trim() === '')
+    if (missing > 0) errors.push(`${label}: ${missing} response(s) have no employee_id.`)
+    const orphans = ids.filter((id) => id.trim() !== '' && !seen.has(id))
     if (orphans.length > 0) {
       errors.push(`${label}: ${orphans.length} response(s) reference an unknown employee_id.`)
     }
+  }
+
+  const pulseIdsByWave = new Map<string, Set<string>>()
+  let duplicatePulseResponses = 0
+  for (const row of pulseSurveys) {
+    if (row.surveyWave.trim() === '' || row.employeeId.trim() === '') continue
+    let ids = pulseIdsByWave.get(row.surveyWave)
+    if (!ids) {
+      ids = new Set<string>()
+      pulseIdsByWave.set(row.surveyWave, ids)
+    }
+    if (ids.has(row.employeeId)) duplicatePulseResponses += 1
+    else ids.add(row.employeeId)
+  }
+  if (duplicatePulseResponses > 0) {
+    warnings.push(`Pulse_Survey: ${duplicatePulseResponses} additional response(s) share an employee_id and survey_wave. All source rows remain included; review duplicates before interpreting pulse averages.`)
   }
 
   /* numeric ranges ------------------------------------------------------- */
@@ -110,7 +160,7 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
     const invalid = countWhere(values, (value) => !isValidScore(value))
     if (invalid > 0) {
       warnings.push(
-        `${sheet}.${column}: ${invalid} value(s) outside the ${SCORE_SCALE.min}–${SCORE_SCALE.max} scale were excluded from averages.`,
+        `${sheet}.${column}: ${invalid} missing, non-numeric or out-of-range value(s) were excluded from averages (${SCORE_SCALE.min}–${SCORE_SCALE.max} scale).`,
       )
     }
   }
@@ -128,7 +178,7 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
   )
   if (invalidEngagement > 0) {
     warnings.push(
-      `Employees.base_engagement: ${invalidEngagement} value(s) fall outside 0–1 and were excluded from averages.`,
+      `Employees.base_engagement: ${invalidEngagement} missing, non-numeric or out-of-range value(s) were excluded from averages (0–1 scale).`,
     )
   }
 
@@ -148,7 +198,7 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
 
   const leaversWithoutDate = countWhere(
     employees,
-    (employee) => employee.exitStatus === 'Leaver' && employee.exitDate === null,
+    (employee) => getEmployeeExitStatus(employee.exitStatus) === 'Leaver' && employee.exitDate === null,
   )
   if (leaversWithoutDate > 0) {
     warnings.push(`Employees: ${leaversWithoutDate} leaver(s) have no exit_date.`)
@@ -156,7 +206,7 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
 
   const leaversWithoutReason = countWhere(
     employees,
-    (employee) => employee.exitStatus === 'Leaver' && employee.exitReason === null,
+    (employee) => getEmployeeExitStatus(employee.exitStatus) === 'Leaver' && employee.exitReason === null,
   )
   if (leaversWithoutReason > 0) {
     warnings.push(`Employees: ${leaversWithoutReason} leaver(s) have no exit_reason.`)
@@ -171,6 +221,15 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
   }
 
   const statusById = new Map(employees.map((employee) => [employee.employeeId, employee.exitStatus]))
+  const employeeById = new Map(employees.map((employee) => [employee.employeeId, employee]))
+  const onboardingGroupDifferences = countWhere(onboardingSurveys, (survey) => {
+    const employee = employeeById.get(survey.employeeId)
+    return employee !== undefined &&
+      (survey.division !== employee.division || survey.employeeGroup !== employee.employeeGroup)
+  })
+  if (onboardingGroupDifferences > 0) {
+    warnings.push(`Onboarding_Survey: ${onboardingGroupDifferences} response(s) have a division or employee_group different from the current Employees record. Group evidence uses the employee master join; source fields remain unchanged.`)
+  }
   const exitSurveysForActive = countWhere(
     exitSurveys,
     (survey) => statusById.get(survey.employeeId) === 'Active',
@@ -192,9 +251,27 @@ export function validateHrDataset(dataset: HrDataset): DataQualityReport {
 
   /* dataset summary cross-check ----------------------------------------- */
 
+  const invalidSummary = countWhere(dataset.datasetSummary, (entry) => !isFiniteNumber(entry.value))
+  if (invalidSummary > 0) warnings.push(`Dataset_Summary.Value: ${invalidSummary} missing or invalid numeric value(s).`)
+
+  const collectionChecks = [
+    { label: 'Employees', metric: 'Employees', rows: employees },
+    { label: 'Onboarding_Survey', metric: 'Onboarding responses', rows: onboardingSurveys },
+    { label: 'Pulse_Survey', metric: 'Pulse responses', rows: pulseSurveys },
+    { label: 'Exit_Survey', metric: 'Exit survey responses', rows: exitSurveys },
+    { label: 'Action_Tracker', metric: 'Action records', rows: actions },
+  ]
+  for (const { label, metric, rows } of collectionChecks) {
+    if (rows.length === 0) warnings.push(`${label}: no rows available.`)
+    const entry = dataset.datasetSummary.find((item) => item.metric === metric)
+    if (entry && entry.value !== rows.length) {
+      errors.push(`Dataset_Summary "${entry.metric}" reports ${entry.value} but ${label} contains ${rows.length} rows.`)
+    }
+  }
+
   const summaryChecks: readonly { keyword: string; actual: number }[] = [
     { keyword: 'active', actual: countWhere(employees, (e) => e.exitStatus === 'Active') },
-    { keyword: 'leaver', actual: countWhere(employees, (e) => e.exitStatus === 'Leaver') },
+    { keyword: 'leaver', actual: countWhere(employees, (e) => getEmployeeExitStatus(e.exitStatus) === 'Leaver') },
   ]
 
   for (const { keyword, actual } of summaryChecks) {
