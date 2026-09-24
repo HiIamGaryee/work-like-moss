@@ -16,12 +16,14 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { SCORE_SCALE } from '@/data/hr-analytics.constants'
+import { getEmployeeExitStatus } from '@/data/hr-data.constants'
 import { CHANNEL_CONSENT_NOTE } from '@/data/hr-care-demo'
 import type { EmployeeCareProfile } from '@/types/hr-automation'
 import type { Employee, ExitSurvey, OnboardingSurvey, PulseSurvey } from '@/types/hr-data'
 import {
   EMPTY_VALUE,
   formatDate,
+  formatScore,
   formatRatioAsPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
@@ -62,8 +64,8 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
     { key: 'group', label: 'Employee group', value: employee.employeeGroup },
     { key: 'location', label: 'Location', value: employee.location },
     { key: 'join', label: 'Join date', value: formatDate(employee.joinDate) },
-    { key: 'tenure', label: 'Tenure', value: `${employee.tenureMonths} months` },
-    { key: 'status', label: 'Status', value: employee.exitStatus },
+    { key: 'tenure', label: 'Tenure', value: employee.tenureMonths === null ? EMPTY_VALUE : `${employee.tenureMonths} months` },
+    { key: 'status', label: 'Status', value: getEmployeeExitStatus(employee.exitStatus) ?? employee.exitStatus },
     {
       key: 'engagement',
       label: 'Base engagement',
@@ -130,10 +132,10 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
                   {onboarding.map((row) => (
                     <TableRow key={`${row.employeeId}-${row.surveyDate}`}>
                       <TableCell className="tabular-nums">{formatDate(row.surveyDate)}</TableCell>
-                      <TableCell className="tabular-nums">{row.overallScore.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.managerSupport.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.roleClarity.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.toolsAccess.toFixed(1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.overallScore, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.managerSupport, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.roleClarity, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.toolsAccess, 1)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -164,12 +166,12 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
                     <TableRow key={`${row.employeeId}-${row.surveyWave}`}>
                       <TableCell className="whitespace-nowrap">{row.surveyWave}</TableCell>
                       <TableCell className="tabular-nums">
-                        {row.engagementScore.toFixed(1)}
+                        {formatScore(row.engagementScore, 1)}
                       </TableCell>
-                      <TableCell className="tabular-nums">{row.managerSupport.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.workload.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.careerGrowth.toFixed(1)}</TableCell>
-                      <TableCell className="tabular-nums">{row.belonging.toFixed(1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.managerSupport, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.workload, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.careerGrowth, 1)}</TableCell>
+                      <TableCell className="tabular-nums">{formatScore(row.belonging, 1)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

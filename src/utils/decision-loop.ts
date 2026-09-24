@@ -31,7 +31,7 @@ export function buildActionLoopStages(input: {
       ? { label: 'Measure', status: 'complete' }
       : input.measurementStatus === 'awaiting-measurement'
         ? { label: 'Measure', status: 'current', detail: 'Awaiting' }
-        : { label: 'Measure', status: 'pending', detail: 'Not configured' }
+        : { label: 'Measure', status: 'pending', detail: 'Not comparable' }
 
   return [
     { label: 'Detect', status: traced },

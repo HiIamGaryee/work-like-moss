@@ -19,7 +19,14 @@ import type { InsightDataSource, InsightScopeKind } from '@/types/hr-insights'
 export type MeasurementStatus =
   | 'awaiting-measurement'
   | 'measurement-available'
-  | 'insufficient-data'
+  | 'not-comparable'
+
+export type OutcomeStatus =
+  | 'awaiting-measurement'
+  | 'improved'
+  | 'declined'
+  | 'no-clear-change'
+  | 'not-comparable'
 
 export type ImpactDirection = 'improved' | 'declined' | 'unchanged' | 'unknown'
 
@@ -52,7 +59,10 @@ export interface ImpactScope {
 export type ImpactUnit = 'score' | 'percentage' | 'count'
 
 export interface ImpactMeasurement {
+  metricKey: ImpactMetricKey
   label: string
+  source: InsightDataSource
+  scope: ImpactScope
 
   baselineValue: number | null
   currentValue: number | null
@@ -62,6 +72,8 @@ export interface ImpactMeasurement {
 
   baselineDate?: string | null
   currentDate?: string | null
+  baselinePeriod: string | null
+  currentPeriod: string | null
 
   /** Raw `current - baseline`, in the metric's own units. */
   difference: number | null
@@ -74,9 +86,10 @@ export interface ImpactMeasurement {
   progressToTarget: number | null
 
   /** Responses behind each side of the comparison, when a count applies. */
-  baselineSampleSize?: number
-  currentSampleSize?: number
+  baselineSampleSize: number | null
+  currentSampleSize: number | null
   comparisonQuality: ComparisonQuality
+  note: string
 
   /** Same metric, same waves, company-wide — context, never a control group. */
   companyDifference?: number | null
@@ -87,8 +100,9 @@ export type LoopStageStatus = 'complete' | 'current' | 'pending'
 
 export interface ActionImpact {
   actionId: string
+  issueId?: string
   insightId?: string
-  /** Present for actions approved from a Step 8 recommendation. */
+  /** Present for actions approved from a Step 5 recommendation. */
   sourceRecommendationId?: string
 
   actionTitle: string
@@ -99,9 +113,13 @@ export interface ActionImpact {
 
   startDate: string
   dueDate: string
+  completedAt?: string
 
   actionStatus: ActionExecutionStatus
   measurementStatus: MeasurementStatus
+  outcomeStatus: OutcomeStatus
+
+  successMetric: string
 
   measurement: ImpactMeasurement | null
 
@@ -119,12 +137,16 @@ export interface ActionImpact {
 
 export interface ImpactSummary {
   actionsTracked: number
+  completedActions: number
   measurementsAvailable: number
+  improved: number
+  declined: number
+  noClearChange: number
   targetsMet: number
   partiallyMet: number
   notMet: number
   awaitingMeasurement: number
-  insufficientData: number
+  notComparable: number
   /** `null` until at least one action has a measured target to judge. */
   targetAchievementRate: number | null
 }

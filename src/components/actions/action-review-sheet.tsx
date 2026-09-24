@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { OWNER_ROLE_OPTIONS, REJECTION_REASONS } from '@/data/hr-action-catalog'
 import { TARGET_DISCLAIMER } from '@/data/hr-action-targets'
 import type { ActionReviewDraft, RecommendedAction } from '@/types/hr-actions'
-import { addDays, isBefore, isValidIsoDate, todayIsoDate } from '@/utils/date'
+import { isBefore, isValidIsoDate, todayIsoDate } from '@/utils/date'
 import { formatActionMetric } from '@/utils/hr-action-view'
 
 type ActionReviewSheetProps = {
@@ -45,7 +45,7 @@ function buildDraft(recommendation: RecommendedAction): ActionReviewDraft {
     description: recommendation.description,
     owner: recommendation.suggestedOwner,
     startDate,
-    dueDate: addDays(startDate, recommendation.suggestedDurationDays),
+    dueDate: '',
     successMeasure: recommendation.successMeasure,
     targetValue:
       recommendation.suggestedTarget.value === null

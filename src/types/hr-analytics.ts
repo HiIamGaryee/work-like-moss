@@ -88,14 +88,201 @@ export interface NewJoinerMetrics {
   newJoinerAverageBaseEngagement: MetricValue
 }
 
-export interface EmployeeAnalytics {
+export interface WorkforceMetrics {
   totalEmployees: number
   activeEmployees: number
   leavers: number
-  activeRate: MetricValue
+  /** Percentage of source employees classified as Leaver, including workbook status `Left`. */
   leaverRate: MetricValue
   /** 0–1 ratio, kept in the source scale. */
   averageBaseEngagement: MetricValue
+}
+
+export interface WorkforceGroupAnalysis extends EmployeeCountMetrics {
+  latestPulseEngagement: MetricValue
+  latestPulseResponseCount: number
+  engagementDifferenceFromCompany: MetricValue
+  isSmallSample: boolean
+  belowCompanyAverage: boolean
+  aboveCompanyLeaverRate: boolean
+}
+
+export interface DivisionAnalysis extends WorkforceGroupAnalysis {
+  division: string
+}
+
+export interface EmployeeGroupAnalysis extends WorkforceGroupAnalysis {
+  group: string
+}
+
+export interface PulseWaveAnalysis {
+  wave: string
+  date: string | null
+  responseCount: number
+  uniqueRespondentCount: number
+  averageEngagement: MetricValue
+  participationRate: null
+}
+
+export interface PulseWaveChange {
+  fromWave: string
+  toWave: string
+  change: number
+}
+
+export interface PulsePatternAnalysis {
+  waves: PulseWaveAnalysis[]
+  latestWave: PulseWaveAnalysis | null
+  previousWave: PulseWaveAnalysis | null
+  latestChange: MetricValue
+  trendDirection: 'up' | 'down' | 'stable' | null
+}
+
+export interface ObservedPattern {
+  id: string
+  message: string
+}
+
+export interface HrObservedPatterns {
+  lowestEngagementDivision: DivisionAnalysis | null
+  highestLeaverRateDivision: DivisionAnalysis | null
+  lowestEngagementEmployeeGroup: EmployeeGroupAnalysis | null
+  largestNegativePulseChange: PulseWaveChange | null
+  pulseDeclining: boolean
+  signals: ObservedPattern[]
+}
+
+export type EvidenceSource = 'pulse' | 'onboarding' | 'exit'
+export type EvidenceStrength = 'strong' | 'moderate' | 'limited'
+export type EvidenceDirection = 'lower' | 'higher' | 'same' | 'not_comparable'
+export type EvidenceTheme =
+  | 'engagement'
+  | 'managerSupport'
+  | 'careerGrowth'
+  | 'belonging'
+  | 'workload'
+  | 'roleClarity'
+  | 'toolsAccess'
+  | 'onboardingOverall'
+  | 'exitOverall'
+  | 'exitWorkload'
+
+export interface EvidenceItem {
+  id: string
+  source: EvidenceSource
+  theme: EvidenceTheme
+  metric: string
+  label: string
+  unit: 'score' | 'percentage'
+  groupValue: MetricValue
+  companyValue: MetricValue
+  difference: MetricValue
+  sampleSize: number
+  companySampleSize: number
+  direction: EvidenceDirection
+  strength: EvidenceStrength
+  isSmallSample: boolean
+  supportsPattern: boolean
+  note: string
+}
+
+export interface ExitReasonCount {
+  reason: string
+  count: number
+  share: MetricValue
+  sampleSize: number
+}
+
+export interface ExitReasonEvidence extends ExitReasonCount {
+  companyCount: number
+  companyShare: MetricValue
+  difference: MetricValue
+  theme: EvidenceTheme | null
+}
+
+export interface CommentThemeMention {
+  source: EvidenceSource
+  theme: EvidenceTheme
+  label: string
+  mentionCount: number
+  totalComments: number
+  percentage: MetricValue
+  sampleSize: number
+  isSmallSample: boolean
+}
+
+export interface DriverCandidate {
+  theme: EvidenceTheme
+  label: string
+  sources: EvidenceSource[]
+  evidenceItems: EvidenceItem[]
+  commentMentions: CommentThemeMention[]
+  sampleSize: number
+  strength: EvidenceStrength
+  summary: string
+}
+
+export interface EvidenceAnalysis {
+  scope: 'division' | 'employeeGroup'
+  group: string
+  weakDimensions: EvidenceItem[]
+  pulse: EvidenceItem[]
+  onboarding: EvidenceItem[]
+  exit: EvidenceItem[]
+  exitReasons: ExitReasonEvidence[]
+  commentThemes: CommentThemeMention[]
+  driverCandidates: DriverCandidate[]
+}
+
+export interface HrEvidenceAnalysis {
+  companyExitReasons: ExitReasonCount[]
+  divisions: EvidenceAnalysis[]
+  employeeGroups: EvidenceAnalysis[]
+  patternEvidenceById: Record<string, EvidenceAnalysis>
+}
+
+export type PrioritySource = EvidenceSource | 'employees'
+export type PriorityBand = 'high' | 'medium' | 'low'
+
+export interface PriorityComponent {
+  score: number | null
+  reason: string
+}
+
+export interface PriorityBreakdown {
+  severity: PriorityComponent
+  reach: PriorityComponent
+  evidence: PriorityComponent
+  urgency: PriorityComponent
+}
+
+export interface PriorityIssue {
+  id: string
+  title: string
+  scopeType: 'company' | 'division' | 'employee_group'
+  scopeName: string
+  metric: string
+  observedValue: MetricValue
+  benchmarkValue: MetricValue
+  difference: MetricValue
+  sampleSize: number
+  affectedEmployees: number
+  reachBasis: string
+  severityScore: number
+  reachScore: number
+  evidenceScore: number
+  urgencyScore: number | null
+  priorityScore: number
+  priorityBand: PriorityBand
+  evidenceStrength: EvidenceStrength
+  sources: PrioritySource[]
+  explanation: string
+  breakdown: PriorityBreakdown
+  supportingEvidence: EvidenceAnalysis | null
+}
+
+export interface EmployeeAnalytics extends WorkforceMetrics {
+  activeRate: MetricValue
   byDivision: DivisionEmployeeMetric[]
   byEmployeeGroup: EmployeeGroupMetric[]
   byLocation: EmployeeGroupMetric[]
@@ -340,7 +527,18 @@ export interface AnalyticsMeta {
   rowCounts: AnalyticsRowCounts
 }
 
-export interface HrAnalytics {
+export interface HrAnalysis {
+  workforce: WorkforceMetrics
+  divisions: DivisionAnalysis[]
+  employeeGroups: EmployeeGroupAnalysis[]
+  pulse: PulsePatternAnalysis
+  patterns: HrObservedPatterns
+  evidence: HrEvidenceAnalysis
+  priorities: PriorityIssue[]
+  dataQuality: DataQualityReport
+}
+
+export interface HrAnalytics extends Omit<HrAnalysis, 'divisions' | 'pulse'> {
   overview: OverviewAnalytics
   employees: EmployeeAnalytics
   onboarding: OnboardingAnalytics
@@ -348,7 +546,6 @@ export interface HrAnalytics {
   exits: ExitAnalytics
   actions: ActionAnalytics
   divisions: DivisionAnalytics[]
-  dataQuality: DataQualityReport
   meta: AnalyticsMeta
 }
 

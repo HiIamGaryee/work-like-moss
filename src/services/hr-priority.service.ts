@@ -15,7 +15,19 @@ import {
   toPriorityLevel,
 } from '@/data/hr-priority-rules'
 import { ROOT_CAUSE_RULES } from '@/data/hr-root-cause-rules'
-import type { HrAnalytics, MetricValue, PulseGroupTrend } from '@/types/hr-analytics'
+import type {
+  EvidenceAnalysis,
+  EvidenceStrength,
+  HrAnalysis,
+  HrAnalytics,
+  MetricValue,
+  PriorityBand,
+  PriorityBreakdown as IssuePriorityBreakdown,
+  PriorityIssue,
+  PrioritySource,
+  PulseGroupTrend,
+} from '@/types/hr-analytics'
+import { MIN_ANALYSIS_SAMPLE_SIZE } from '@/data/hr-analytics.constants'
 import type { HrInsight, InsightScope, LikelyDriver } from '@/types/hr-insights'
 import type {
   InsightPriority,
@@ -305,4 +317,347 @@ export function calculateInsightPriority(
     reasons,
     explanation: `${PRIORITY_LEVEL_LABELS[level]} priority because ${reasons.join(', ')}.`,
   }
+}
+/**
+ * Step 4 issue ranking is a transparent demo business rule. It is not a
+ * statistical test, prediction, or decision about any employee.
+ */
+export const SUGGESTED_PRIORITY_CONFIG = {
+  weights: { severity: 0.3, reach: 0.2, evidence: 0.3, urgency: 0.2 },
+  bands: { high: 70, medium: 40 },
+  severity: {
+    scoreDeadZone: 0.05,
+    scoreFullScale: 0.5,
+    leaverDeadZone: 1,
+    leaverFullScale: 12,
+    onboardingIssueGap: 0.2,
+    pulseDeclineIssueGap: 0.15,
+  },
+  evidence: {
+    base: { strong: 75, moderate: 55, limited: 25 },
+    sourceBonus: 7,
+    sampleBonusMax: 15,
+    sampleBonusFullSize: 40,
+    smallSampleCap: 35,
+    limitedCap: 45,
+  },
+  urgency: {
+    latestWaveSignal: 40,
+    declineBase: 50,
+    declineFullScale: 0.4,
+  },
+} as const
+
+type SuggestedPriorityInput = Pick<
+  HrAnalysis,
+  'workforce' | 'divisions' | 'employeeGroups' | 'pulse' | 'evidence'
+>
+
+type IssueDraft = Pick<
+  PriorityIssue,
+  | 'id'
+  | 'title'
+  | 'scopeType'
+  | 'scopeName'
+  | 'metric'
+  | 'observedValue'
+  | 'benchmarkValue'
+  | 'difference'
+  | 'sampleSize'
+  | 'affectedEmployees'
+  | 'reachBasis'
+  | 'supportingEvidence'
+> & {
+  primarySource: PrioritySource
+  severity: IssuePriorityBreakdown['severity']
+  urgency: IssuePriorityBreakdown['urgency']
+  useRelatedEvidence: boolean
+  totalEmployees: number
+}
+
+function clampIssueScore(value: number): number {
+  return Math.round(Math.max(0, Math.min(100, value)))
+}
+
+function normaliseIssueGap(gap: number, deadZone: number, fullScale: number): number {
+  if (!Number.isFinite(gap) || gap <= deadZone) return 0
+  return clampIssueScore(((gap - deadZone) / (fullScale - deadZone)) * 100)
+}
+
+function suggestedBand(score: number): PriorityBand {
+  if (score >= SUGGESTED_PRIORITY_CONFIG.bands.high) return 'high'
+  if (score >= SUGGESTED_PRIORITY_CONFIG.bands.medium) return 'medium'
+  return 'low'
+}
+
+function issueEvidence(
+  source: PrioritySource,
+  sampleSize: number,
+  related: EvidenceAnalysis | null,
+  useRelated: boolean,
+): {
+  component: IssuePriorityBreakdown['evidence']
+  strength: EvidenceStrength
+  sources: PrioritySource[]
+} {
+  const candidate = useRelated
+    ? related?.driverCandidates.find((item) => item.strength !== 'limited')
+    : undefined
+  const supportingSources = candidate?.evidenceItems
+    .filter((item) => item.strength === 'moderate' || item.strength === 'strong')
+    .map((item) => item.source) ?? []
+  const sources = [...new Set<PrioritySource>([source, ...supportingSources])]
+  const strength: EvidenceStrength = sampleSize < MIN_ANALYSIS_SAMPLE_SIZE
+    ? 'limited'
+    : candidate?.strength ?? 'moderate'
+  const rules = SUGGESTED_PRIORITY_CONFIG.evidence
+  const sampleBonus = Math.min(
+    rules.sampleBonusMax,
+    (sampleSize / rules.sampleBonusFullSize) * rules.sampleBonusMax,
+  )
+  let score = clampIssueScore(
+    rules.base[strength] + Math.max(0, sources.length - 1) * rules.sourceBonus + sampleBonus,
+  )
+  if (sampleSize < MIN_ANALYSIS_SAMPLE_SIZE) score = Math.min(score, rules.smallSampleCap)
+  if (strength === 'limited') score = Math.min(score, rules.limitedCap)
+
+  const sourceNames = sources.map((item) => item === 'employees' ? 'Employees' : item)
+  const reason = sampleSize < MIN_ANALYSIS_SAMPLE_SIZE
+    ? `${sourceNames.join(' + ')} has n = ${sampleSize}, below the minimum sample of ${MIN_ANALYSIS_SAMPLE_SIZE}; evidence is capped.`
+    : `${sourceNames.join(' + ')} supports this signal with n = ${sampleSize} in the primary source${candidate ? ` and ${candidate.strength} related evidence` : ''}.`
+
+  return { component: { score, reason }, strength, sources }
+}
+
+function makeSuggestedIssue(draft: IssueDraft): PriorityIssue | null {
+  const severityScore = draft.severity.score
+  if (severityScore === null || !Number.isFinite(severityScore) ||
+      draft.totalEmployees <= 0 || draft.affectedEmployees < 0) return null
+
+  const reachScore = clampIssueScore(
+    (draft.affectedEmployees / draft.totalEmployees) * 100,
+  )
+  const reach: IssuePriorityBreakdown['reach'] = {
+    score: reachScore,
+    reason: `${draft.affectedEmployees} of ${draft.totalEmployees} employees are in this scope (${draft.reachBasis}); headcount is a scope proxy, not a count of affected people.`,
+  }
+  const { component: evidence, strength, sources } = issueEvidence(
+    draft.primarySource, draft.sampleSize, draft.supportingEvidence,
+    draft.useRelatedEvidence,
+  )
+  const breakdown: IssuePriorityBreakdown = {
+    severity: draft.severity,
+    reach,
+    evidence,
+    urgency: draft.urgency,
+  }
+  const components = [
+    { score: breakdown.severity.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.severity },
+    { score: breakdown.reach.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.reach },
+    { score: breakdown.evidence.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.evidence },
+    { score: breakdown.urgency.score, weight: SUGGESTED_PRIORITY_CONFIG.weights.urgency },
+  ].filter((item): item is { score: number; weight: number } => item.score !== null)
+  if (components.length < 2 || evidence.score === null) return null
+  const availableWeight = components.reduce((sum, item) => sum + item.weight, 0)
+  if (availableWeight <= 0) return null
+  const priorityScore = clampIssueScore(
+    components.reduce((sum, item) => sum + item.score * item.weight, 0) / availableWeight,
+  )
+
+  return {
+    id: draft.id,
+    title: draft.title,
+    scopeType: draft.scopeType,
+    scopeName: draft.scopeName,
+    metric: draft.metric,
+    observedValue: draft.observedValue,
+    benchmarkValue: draft.benchmarkValue,
+    difference: draft.difference,
+    sampleSize: draft.sampleSize,
+    affectedEmployees: draft.affectedEmployees,
+    reachBasis: draft.reachBasis,
+    severityScore: clampIssueScore(severityScore),
+    reachScore,
+    evidenceScore: evidence.score,
+    urgencyScore: draft.urgency.score,
+    priorityScore,
+    priorityBand: suggestedBand(priorityScore),
+    evidenceStrength: strength,
+    sources,
+    breakdown,
+    supportingEvidence: draft.supportingEvidence,
+    explanation: `${draft.severity.reason} ${reach.reason} ${evidence.reason} ${draft.urgency.reason} Suggested priority is a review signal; HR makes the final decision.`,
+  }
+}
+
+/** One ranked, group-level issue per scope and observed metric. */
+export function buildSuggestedPriorityIssues(analysis: SuggestedPriorityInput): PriorityIssue[] {
+  const totalEmployees = analysis.workforce.totalEmployees
+  if (totalEmployees === 0) return []
+  const issues = new Map<string, PriorityIssue>()
+  const add = (draft: IssueDraft) => {
+    const issue = makeSuggestedIssue(draft)
+    if (issue && !issues.has(issue.id)) issues.set(issue.id, issue)
+  }
+  const divisionEvidence = new Map(
+    analysis.evidence.divisions.map((item) => [item.group, item]),
+  )
+  const employeeGroupEvidence = new Map(
+    analysis.evidence.employeeGroups.map((item) => [item.group, item]),
+  )
+  const groups = [
+    ...analysis.divisions.map((item) => ({
+      item, scopeType: 'division' as const, scopeName: item.division,
+      supportingEvidence: divisionEvidence.get(item.division) ?? null,
+      reachBasis: 'division headcount',
+    })),
+    ...analysis.employeeGroups.map((item) => ({
+      item, scopeType: 'employee_group' as const, scopeName: item.group,
+      supportingEvidence: employeeGroupEvidence.get(item.group) ?? null,
+      reachBasis: 'employee-group headcount',
+    })),
+  ]
+
+  for (const { item, scopeType, scopeName, supportingEvidence, reachBasis } of groups) {
+    const scopeId = `${scopeType}:${encodeURIComponent(scopeName)}`
+    const pulseGap = item.engagementDifferenceFromCompany
+    if (pulseGap !== null && pulseGap < -SUGGESTED_PRIORITY_CONFIG.severity.scoreDeadZone &&
+        item.latestPulseEngagement !== null && analysis.pulse.latestWave) {
+      const gap = Math.abs(pulseGap)
+      add({
+        id: `${scopeId}:pulse_engagement`,
+        title: `${scopeName} latest pulse engagement is below the company average`,
+        scopeType, scopeName, metric: 'pulse_engagement',
+        observedValue: item.latestPulseEngagement,
+        benchmarkValue: analysis.pulse.latestWave.averageEngagement,
+        difference: pulseGap,
+        sampleSize: item.latestPulseResponseCount,
+        affectedEmployees: item.employeeCount,
+        reachBasis, supportingEvidence, primarySource: 'pulse',
+        useRelatedEvidence: true, totalEmployees,
+        severity: {
+          score: normaliseIssueGap(
+            gap,
+            SUGGESTED_PRIORITY_CONFIG.severity.scoreDeadZone,
+            SUGGESTED_PRIORITY_CONFIG.severity.scoreFullScale,
+          ),
+          reason: `${scopeName} latest pulse engagement is ${gap.toFixed(2)} points below the same-wave company average (n = ${item.latestPulseResponseCount}).`,
+        },
+        urgency: {
+          score: SUGGESTED_PRIORITY_CONFIG.urgency.latestWaveSignal,
+          reason: `The gap appears in the latest recorded pulse wave, ${analysis.pulse.latestWave.wave}; no group trend is inferred.`,
+        },
+      })
+    }
+
+    const leaverGap = item.leaverRate !== null && analysis.workforce.leaverRate !== null
+      ? item.leaverRate - analysis.workforce.leaverRate : null
+    if (leaverGap !== null && leaverGap > SUGGESTED_PRIORITY_CONFIG.severity.leaverDeadZone) {
+      add({
+        id: `${scopeId}:leaver_rate`,
+        title: `${scopeName} leaver rate is above the company rate`,
+        scopeType, scopeName, metric: 'leaver_rate',
+        observedValue: item.leaverRate,
+        benchmarkValue: analysis.workforce.leaverRate,
+        difference: leaverGap,
+        sampleSize: item.employeeCount,
+        affectedEmployees: item.employeeCount,
+        reachBasis, supportingEvidence, primarySource: 'employees',
+        useRelatedEvidence: false, totalEmployees,
+        severity: {
+          score: normaliseIssueGap(
+            leaverGap,
+            SUGGESTED_PRIORITY_CONFIG.severity.leaverDeadZone,
+            SUGGESTED_PRIORITY_CONFIG.severity.leaverFullScale,
+          ),
+          reason: `${scopeName} leaver rate is ${leaverGap.toFixed(2)} percentage points above the company rate (${item.leaverCount} of ${item.employeeCount} employees).`,
+        },
+        urgency: {
+          score: null,
+          reason: 'The workbook has no comparable dated leaver-rate trend; urgency is omitted and the available weights are renormalised.',
+        },
+      })
+    }
+
+    const onboarding = supportingEvidence?.onboarding.find(
+      (evidenceItem) => evidenceItem.theme === 'onboardingOverall',
+    )
+    if (onboarding && onboarding.difference !== null &&
+        onboarding.difference < -SUGGESTED_PRIORITY_CONFIG.severity.onboardingIssueGap &&
+        onboarding.groupValue !== null) {
+      const gap = Math.abs(onboarding.difference)
+      add({
+        id: `${scopeId}:onboarding_overall`,
+        title: `${scopeName} onboarding score is below the company average`,
+        scopeType, scopeName, metric: 'onboarding_overall',
+        observedValue: onboarding.groupValue,
+        benchmarkValue: onboarding.companyValue,
+        difference: onboarding.difference,
+        sampleSize: onboarding.sampleSize,
+        affectedEmployees: item.employeeCount,
+        reachBasis, supportingEvidence, primarySource: 'onboarding',
+        useRelatedEvidence: true, totalEmployees,
+        severity: {
+          score: normaliseIssueGap(
+            gap,
+            SUGGESTED_PRIORITY_CONFIG.severity.scoreDeadZone,
+            SUGGESTED_PRIORITY_CONFIG.severity.scoreFullScale,
+          ),
+          reason: `${scopeName} onboarding is ${gap.toFixed(2)} points below the company onboarding average (n = ${onboarding.sampleSize}).`,
+        },
+        urgency: {
+          score: null,
+          reason: 'No comparable onboarding time trend is available; urgency is omitted and the available weights are renormalised.',
+        },
+      })
+    }
+  }
+
+  const latest = analysis.pulse.latestWave
+  const previous = analysis.pulse.previousWave
+  const change = analysis.pulse.latestChange
+  if (latest && previous && latest.averageEngagement !== null &&
+      previous.averageEngagement !== null &&
+      change !== null && change < -SUGGESTED_PRIORITY_CONFIG.severity.pulseDeclineIssueGap) {
+    const decline = Math.abs(change)
+    add({
+      id: 'company:pulse_engagement_decline',
+      title: 'Company pulse engagement declined in the latest comparable wave',
+      scopeType: 'company', scopeName: 'Company', metric: 'pulse_engagement_change',
+      observedValue: latest.averageEngagement,
+      benchmarkValue: previous.averageEngagement,
+      difference: change,
+      sampleSize: latest.responseCount,
+      affectedEmployees: analysis.workforce.activeEmployees,
+      reachBasis: 'active workforce headcount',
+      supportingEvidence: null,
+      primarySource: 'pulse', useRelatedEvidence: false, totalEmployees,
+      severity: {
+        score: normaliseIssueGap(
+          decline,
+          SUGGESTED_PRIORITY_CONFIG.severity.scoreDeadZone,
+          SUGGESTED_PRIORITY_CONFIG.severity.scoreFullScale,
+        ),
+        reason: `Company pulse engagement fell ${decline.toFixed(2)} points from ${previous.wave} to ${latest.wave} (latest n = ${latest.responseCount}).`,
+      },
+      urgency: {
+        score: clampIssueScore(
+          SUGGESTED_PRIORITY_CONFIG.urgency.declineBase +
+          normaliseIssueGap(
+            decline,
+            SUGGESTED_PRIORITY_CONFIG.severity.pulseDeclineIssueGap,
+            SUGGESTED_PRIORITY_CONFIG.urgency.declineFullScale,
+          ) / 2,
+        ),
+        reason: `The decline is between the two latest comparable pulse waves, ${previous.wave} and ${latest.wave}.`,
+      },
+    })
+  }
+
+  return [...issues.values()].sort(
+    (a, b) => b.priorityScore - a.priorityScore ||
+      b.evidenceScore - a.evidenceScore ||
+      b.severityScore - a.severityScore ||
+      a.id.localeCompare(b.id),
+  )
 }

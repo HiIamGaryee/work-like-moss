@@ -28,26 +28,43 @@ export function BeforeAfterMetric({ measurement }: BeforeAfterMetricProps) {
   const scaleSuffix = unit === 'score' ? ` / ${SCORE_SCALE.max}` : ''
 
   const columns = [
-    { key: 'baseline', label: 'Baseline', value: baselineValue, date: measurement.baselineDate },
-    { key: 'current', label: 'Current', value: currentValue, date: measurement.currentDate },
-    { key: 'target', label: 'Target', value: targetValue, date: null },
+    {
+      key: 'baseline', label: 'Baseline', value: baselineValue,
+      date: measurement.baselineDate, period: measurement.baselinePeriod,
+      sampleSize: measurement.baselineSampleSize,
+    },
+    {
+      key: 'current', label: 'Current', value: currentValue,
+      date: measurement.currentDate, period: measurement.currentPeriod,
+      sampleSize: measurement.currentSampleSize,
+    },
+    { key: 'target', label: 'Target', value: targetValue, date: null, period: null, sampleSize: null },
   ]
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-x-3 sm:gap-y-1">
         {columns.map((column) => (
           <div key={column.key} className="min-w-0 space-y-0.5">
             <dt className="text-xs text-muted-foreground">{column.label}</dt>
             <dd className="text-lg font-semibold tabular-nums">
-              {readValue(column.value, unit)}
+              {column.key === 'target' && column.value === null
+                ? 'No numeric target'
+                : readValue(column.value, unit)}
               {column.value === null ? '' : (
                 <span className="text-xs font-normal text-muted-foreground">{scaleSuffix}</span>
               )}
             </dd>
-            {column.date ? (
+            {column.period || column.date ? (
               <dd className="text-xs break-words text-muted-foreground">
-                {formatDate(column.date)}
+                {[column.period, column.date ? formatDate(column.date) : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </dd>
+            ) : null}
+            {column.sampleSize !== null ? (
+              <dd className="text-xs text-muted-foreground tabular-nums">
+                n = {column.sampleSize.toLocaleString()}
               </dd>
             ) : null}
           </div>

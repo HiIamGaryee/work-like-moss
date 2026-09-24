@@ -21,7 +21,7 @@ const IMPACT_TABS = [
   { key: 'measured', label: 'Measured' },
   { key: 'awaiting', label: 'Awaiting measurement' },
   { key: 'completed', label: 'Completed actions' },
-  { key: 'not-configured', label: 'Not configured' },
+  { key: 'not-comparable', label: 'Not comparable' },
 ] as const
 
 type ImpactTabKey = (typeof IMPACT_TABS)[number]['key']
@@ -31,14 +31,14 @@ const MATCHERS: Record<ImpactTabKey, (impact: ActionImpact) => boolean> = {
   measured: (impact) => impact.measurementStatus === 'measurement-available',
   awaiting: (impact) => impact.measurementStatus === 'awaiting-measurement',
   completed: (impact) => impact.actionStatus === 'completed',
-  'not-configured': (impact) => impact.measurementStatus === 'insufficient-data',
+  'not-comparable': (impact) => impact.measurementStatus === 'not-comparable',
 }
 
 function ImpactSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => (
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, index) => (
           <Card key={index} size="sm" className="gap-2">
             <CardHeader>
               <Skeleton className="h-3 w-24" />
@@ -73,7 +73,7 @@ function ImpactSkeleton() {
  *
  * It answers one question per action: is there a later reading of the measure
  * that action targeted, and did it move? Where the workbook holds readings on
- * both sides of an action's start date, a real before-and-after is shown. Where
+ * both sides of a completed action, a real before-and-after is shown. Where
  * it does not, the page says "awaiting measurement" — which is a credible
  * outcome, and the only honest one. No survey wave is simulated, no result is
  * projected, and no card claims an action caused a change.
@@ -122,7 +122,7 @@ export function ImpactPage() {
     <div className="w-full space-y-6">
       <PageHeader
         title="Impact"
-        description="Track whether HR actions are followed by measurable improvements in employee experience."
+        description="Track observable metric movement after completed HR actions without treating timing as proof of causation."
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="outline">Official data only</Badge>
@@ -143,7 +143,7 @@ export function ImpactPage() {
             <div className="min-w-0 space-y-1">
               <h2 className="text-lg font-semibold tracking-tight">Action impact tracker</h2>
               <p className="text-sm text-muted-foreground">
-                Measured actions first, then those still awaiting a later reading.
+                Actions awaiting a later reading first, followed by measured outcomes.
               </p>
             </div>
 

@@ -1,8 +1,12 @@
 import { ArrowRight } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ActionStatusBadge } from '@/components/actions/action-status-badge'
 import { PriorityBadge } from '@/components/insights/priority-badge'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -11,7 +15,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import type { HrAction } from '@/types/hr-actions'
+import type { ActionAssignmentDraft, HrAction } from '@/types/hr-actions'
+import { isBefore, isValidIsoDate } from '@/utils/date'
 import { EMPTY_VALUE, formatDate } from '@/utils/format'
 import { formatActionMetric, formatDueWindow, isActionOverdue } from '@/utils/hr-action-view'
 
@@ -19,13 +24,68 @@ type ActionDetailSheetProps = {
   action: HrAction | null
   today: string
   onClose: () => void
+  onUpdateAssignment: (actionId: string, draft: ActionAssignmentDraft) => void
+}
+
+function AssignmentEditor({
+  action,
+  onSave,
+}: {
+  action: HrAction
+  onSave: (actionId: string, draft: ActionAssignmentDraft) => void
+}) {
+  const [owner, setOwner] = useState(action.owner)
+  const [dueDate, setDueDate] = useState(action.dueDate)
+  const valid = owner.trim().length > 0 && isValidIsoDate(dueDate) &&
+    !isBefore(dueDate, action.startDate)
+  const unchanged = owner.trim() === action.owner && dueDate === action.dueDate
+
+  return (
+    <section className="space-y-3 border-t pt-4">
+      <h3 className="text-sm font-medium">Owner and due date</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor={`assignment-owner-${action.id}`}>Owner</Label>
+          <Input
+            id={`assignment-owner-${action.id}`}
+            value={owner}
+            onChange={(event) => setOwner(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`assignment-due-${action.id}`}>Due date</Label>
+          <Input
+            id={`assignment-due-${action.id}`}
+            type="date"
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
+          />
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!valid || unchanged}
+        onClick={() => onSave(action.id, { owner: owner.trim(), dueDate })}
+      >
+        Save assignment
+      </Button>
+      {!valid ? (
+        <p className="text-xs text-muted-foreground">
+          Enter an owner and a valid due date on or after the start date.
+        </p>
+      ) : null}
+    </section>
+  )
 }
 
 /**
- * Read-only detail for one approved action. Completion means the action was
- * performed — never that it worked. No impact is claimed anywhere on this panel.
+ * Detail and assignment editing for one approved action. Completion means the
+ * activity was performed — never that the workforce outcome improved.
  */
-export function ActionDetailSheet({ action, today, onClose }: ActionDetailSheetProps) {
+export function ActionDetailSheet({
+  action, today, onClose, onUpdateAssignment,
+}: ActionDetailSheetProps) {
   if (!action) return null
 
   const fields = [
@@ -41,7 +101,7 @@ export function ActionDetailSheet({ action, today, onClose }: ActionDetailSheetP
       value: formatActionMetric(action.baselineMetric),
     },
     { key: 'target', label: 'Target', value: formatActionMetric(action.targetMetric) },
-    { key: 'created', label: 'Approved on', value: formatDate(action.createdAt.slice(0, 10)) },
+    { key: 'created', label: 'Approved on', value: formatDate((action.approvedAt ?? action.createdAt).slice(0, 10)) },
     {
       key: 'completed',
       label: 'Marked completed',
@@ -89,6 +149,22 @@ export function ActionDetailSheet({ action, today, onClose }: ActionDetailSheetP
 
           <Separator />
 
+          {action.status === 'planned' || action.status === 'in-progress' ? (
+            <AssignmentEditor
+              key={action.id}
+              action={action}
+              onSave={onUpdateAssignment}
+            />
+          ) : null}
+
+          {action.evidenceSources?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {action.evidenceSources.map((source) => (
+                <Badge key={source} variant="outline">{source}</Badge>
+              ))}
+            </div>
+          ) : null}
+
           <section className="space-y-1">
             <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Success measure
@@ -96,7 +172,7 @@ export function ActionDetailSheet({ action, today, onClose }: ActionDetailSheetP
             <p className="text-sm break-words">{action.successMeasure}</p>
             <p className="text-xs text-muted-foreground">
               Marking an action completed records that it was performed. Whether it worked is
-              measured separately, against the next survey wave.
+              assessed separately when comparable evidence becomes available.
             </p>
           </section>
 
@@ -107,6 +183,15 @@ export function ActionDetailSheet({ action, today, onClose }: ActionDetailSheetP
                 className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
               >
                 View original analysis
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            ) : null}
+            {action.issueId && !action.insightId ? (
+              <Link
+                to="/insights"
+                className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
+              >
+                View priority analysis
                 <ArrowRight className="size-3.5" aria-hidden="true" />
               </Link>
             ) : null}

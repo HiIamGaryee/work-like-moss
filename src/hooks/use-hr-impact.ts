@@ -40,12 +40,16 @@ type HrImpactState = {
 
 const EMPTY_SUMMARY: ImpactSummary = {
   actionsTracked: 0,
+  completedActions: 0,
   measurementsAvailable: 0,
+  improved: 0,
+  declined: 0,
+  noClearChange: 0,
   targetsMet: 0,
   partiallyMet: 0,
   notMet: 0,
   awaitingMeasurement: 0,
-  insufficientData: 0,
+  notComparable: 0,
   targetAchievementRate: null,
 }
 

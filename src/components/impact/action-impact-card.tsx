@@ -6,6 +6,7 @@ import { DecisionLoop } from '@/components/impact/decision-loop'
 import {
   ComparisonQualityBadge,
   MeasurementStatusBadge,
+  OutcomeStatusBadge,
   TargetStatusBadge,
 } from '@/components/impact/impact-status-badge'
 import { MeasurementTimeline } from '@/components/impact/measurement-timeline'
@@ -28,7 +29,7 @@ type ActionImpactCardProps = {
  * The card keeps three questions visibly separate: was the action carried out,
  * is there a later reading, and did that reading reach the target. It never
  * collapses them into a single verdict, and it never says the action caused the
- * change — only that the metric moved after it began.
+ * change — only that the metric was observed after completion.
  */
 export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCardProps) {
   const { measurement } = impact
@@ -58,6 +59,7 @@ export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCa
           <ActionStatusBadge status={impact.actionStatus} />
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             <MeasurementStatusBadge status={impact.measurementStatus} />
+            <OutcomeStatusBadge status={impact.outcomeStatus} />
             {measurement && measurement.targetStatus !== 'not-measured' ? (
               <TargetStatusBadge status={measurement.targetStatus} />
             ) : null}
@@ -76,6 +78,11 @@ export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCa
             </div>
           ))}
         </dl>
+
+        <div className="min-w-0 space-y-0.5 border-t pt-3">
+          <p className="text-xs text-muted-foreground">Success metric</p>
+          <p className="text-sm break-words">{impact.successMetric}</p>
+        </div>
 
         {/* Baseline and target are shown even while awaiting a later reading —
             an approved target with no result yet is the honest state, not a gap. */}
@@ -114,32 +121,47 @@ export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCa
         <div className="min-w-0 space-y-0.5 border-t pt-3">
           <p className="text-xs text-muted-foreground">Interpretation</p>
           <p className="text-sm break-words">{impact.interpretation}</p>
+          {measurement?.note ? (
+            <p className="text-xs break-words text-muted-foreground">{measurement.note}</p>
+          ) : null}
         </div>
 
         <div className="space-y-3 border-t pt-3">
           <p className="text-xs text-muted-foreground">Decision loop</p>
           <DecisionLoop
             stages={buildActionLoopStages({
-              hasInsight: impact.insightId !== undefined,
+              hasInsight: impact.insightId !== undefined || impact.issueId !== undefined,
               actionApproved: true,
               measurementStatus: impact.measurementStatus,
             })}
           />
         </div>
 
-        {impact.insightId ? (
+        {impact.insightId || impact.issueId || impact.sourceRecommendationId ? (
           <>
             <Separator />
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {impact.insightId ? (
+                <Link
+                  to={`/insights/${impact.insightId}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
+                >
+                  View original analysis
+                  <ArrowRight className="size-3.5" aria-hidden="true" />
+                </Link>
+              ) : impact.issueId ? (
+                <Link
+                  to="/insights"
+                  className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
+                >
+                  View priority analysis
+                  <ArrowRight className="size-3.5" aria-hidden="true" />
+                </Link>
+              ) : null}
               <Link
-                to={`/insights/${impact.insightId}`}
-                className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
-              >
-                View original analysis
-                <ArrowRight className="size-3.5" aria-hidden="true" />
-              </Link>
-              <Link
-                to="/actions"
+                to={impact.sourceRecommendationId
+                  ? `/actions?recommendation=${encodeURIComponent(impact.sourceRecommendationId)}`
+                  : '/actions'}
                 className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
               >
                 View action

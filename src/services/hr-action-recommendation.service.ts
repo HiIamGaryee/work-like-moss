@@ -1,6 +1,7 @@
 import {
   DIAGNOSTIC_ACTION_TEMPLATE,
   DIAGNOSTIC_DRIVER_LABEL,
+  EVIDENCE_THEME_DRIVER_MAP,
   findActionTemplate,
   scopePhrase,
   suggestOwnerRole,
@@ -10,11 +11,12 @@ import {
   ACTION_DURATION_DAYS,
   ACTION_RECOMMENDATION_MIN_PRIORITY,
   MAX_ACTION_RECOMMENDATIONS,
-  suggestTarget,
 } from '@/data/hr-action-targets'
 import { PRIORITY_LEVEL_LABELS, PRIORITY_LEVEL_ORDER } from '@/data/hr-priority-rules'
 import { EVIDENCE_STRENGTH_LABELS, NO_DRIVER_MESSAGE } from '@/data/hr-root-cause-rules'
+import type { PriorityIssue, PrioritySource } from '@/types/hr-analytics'
 import type {
+  ActionAssignmentDraft,
   ActionExecutionStatus,
   ActionMetric,
   ActionReviewDraft,
@@ -27,10 +29,12 @@ import type {
   DriverCategory,
   HrInsight,
   InsightDataSource,
+  InsightScope,
   LikelyDriver,
 } from '@/types/hr-insights'
 import type { HrIntelligenceItem } from '@/types/hr-intelligence'
 import { round } from '@/utils/analytics'
+import { isBefore, isValidIsoDate } from '@/utils/date'
 import { isRateMetricLabel } from '@/utils/format'
 
 /**
@@ -40,8 +44,8 @@ import { isRateMetricLabel } from '@/utils/format'
  *
  * Nothing here is random and nothing here is invented. A recommendation is a
  * catalogue template selected by the issue's strongest measured driver, an owner
- * role read from a published mapping, a timeline read from the priority level,
- * and a target computed from a baseline that came out of the analytics layer.
+ * role read from a published mapping, and a baseline from the analytics layer.
+ * Numeric targets are left for HR to define during review.
  *
  * When no driver clears the evidence bar, the engine recommends validating the
  * issue rather than guessing an intervention. It never executes anything: every
@@ -180,9 +184,7 @@ function buildRecommendation(item: HrIntelligenceItem): RecommendedAction {
     suggestedDurationDays: template.durationDays ?? ACTION_DURATION_DAYS[priority.level],
 
     baselineMetric,
-    suggestedTarget: isMovable
-      ? suggestTarget(baselineMetric, template.targetDirection)
-      : { ...baselineMetric, value: null },
+    suggestedTarget: { ...baselineMetric, value: null },
 
     ...(metricKey
       ? { impactMetricKey: metricKey, impactScope: { kind: insight.scope.kind, key: insight.scope.key } }
@@ -193,6 +195,85 @@ function buildRecommendation(item: HrIntelligenceItem): RecommendedAction {
     rationale: buildRationale(item, driver),
     evidenceSources: driver ? [...driver.dataSources] : [...insight.dataSources],
 
+    reviewStatus: 'pending-review',
+  }
+}
+
+const PRIORITY_SOURCE_LABELS: Record<PrioritySource, InsightDataSource> = {
+  employees: 'Employees',
+  pulse: 'Pulse Survey',
+  onboarding: 'Onboarding Survey',
+  exit: 'Exit Survey',
+}
+
+function scopeFromPriority(issue: PriorityIssue): InsightScope {
+  return {
+    kind: issue.scopeType === 'employee_group' ? 'employee-group' : issue.scopeType,
+    key: issue.scopeType === 'company' ? null : issue.scopeName,
+    label: issue.scopeName,
+  }
+}
+
+/** A Step 4 issue produces one suggestion, never an approved action. */
+function buildPriorityRecommendation(issue: PriorityIssue): RecommendedAction {
+  const scope = scopeFromPriority(issue)
+  const driver = issue.metric === 'leaver_rate' || issue.evidenceStrength === 'limited'
+    ? null
+    : issue.supportingEvidence?.driverCandidates.find(
+        (candidate) =>
+          candidate.strength !== 'limited' &&
+          EVIDENCE_THEME_DRIVER_MAP[candidate.theme] !== undefined,
+      ) ?? null
+  const driverCategory = driver ? EVIDENCE_THEME_DRIVER_MAP[driver.theme] : undefined
+  const template = driverCategory
+    ? findActionTemplate(driverCategory, scope.kind) ?? DIAGNOSTIC_ACTION_TEMPLATE
+    : DIAGNOSTIC_ACTION_TEMPLATE
+  const driverKey: RecommendationDriverKey = driverCategory ?? 'diagnostic'
+  const measured = driver?.evidenceItems.find(
+    (item) =>
+      item.theme === driver.theme &&
+      (item.source === 'pulse' || item.source === 'onboarding') &&
+      item.groupValue !== null,
+  )
+  const measuredSource = measured ? PRIORITY_SOURCE_LABELS[measured.source] : undefined
+  const metricKey = driverCategory && measuredSource
+    ? DRIVER_METRIC_KEYS[driverCategory]?.[measuredSource]
+    : undefined
+  const baselineMetric: ActionMetric = measured
+    ? { label: measured.label, value: measured.groupValue, unit: measured.unit }
+    : {
+        label: issue.metric.replace(/_/g, ' '),
+        value: issue.observedValue,
+        unit: issue.metric === 'leaver_rate' ? 'percentage' : 'score',
+      }
+  const sources = [...new Set(issue.sources.map((source) => PRIORITY_SOURCE_LABELS[source]))]
+  const successMeasure = measured
+    ? template.successMeasureTemplate
+    : template.operationalSuccessMeasure
+
+  return {
+    id: `rec--priority--${issue.id}--${driverKey}`,
+    issueId: issue.id,
+    title: template.title,
+    description: template.description,
+    issueTitle: issue.title,
+    affectedScope: scopePhrase(scope),
+    driverCategory: driverKey,
+    driverLabel: driver?.label ?? DIAGNOSTIC_DRIVER_LABEL,
+    priorityScore: issue.priorityScore,
+    priorityLevel: issue.priorityBand,
+    suggestedOwner: suggestOwnerRole(driverKey, scope),
+    suggestedDurationDays: template.durationDays ?? ACTION_DURATION_DAYS[issue.priorityBand],
+    baselineMetric,
+    suggestedTarget: { ...baselineMetric, value: null },
+    ...(metricKey
+      ? { impactMetricKey: metricKey, impactScope: { kind: scope.kind, key: scope.key } }
+      : {}),
+    successMeasure: successMeasure.replace('{scope}', scopePhrase(scope)),
+    rationale: driver
+      ? `${driver.label} is a ${driver.strength} related signal in ${joinSources(sources)}. The action is a template for HR review, not a proven remedy.`
+      : `No sufficiently supported matching driver is available for this issue. Validate the issue with the relevant HR and business owner before selecting an intervention.`,
+    evidenceSources: sources,
     reviewStatus: 'pending-review',
   }
 }
@@ -213,6 +294,7 @@ const deduplicationKey = (item: HrIntelligenceItem, recommendation: RecommendedA
 
 export function generateActionRecommendations(
   intelligenceItems: HrIntelligenceItem[],
+  priorityIssues: readonly PriorityIssue[] = [],
 ): RecommendedAction[] {
   const eligible = intelligenceItems
     .filter(
@@ -235,7 +317,42 @@ export function generateActionRecommendations(
     if (!unique.has(key)) unique.set(key, recommendation)
   }
 
-  return [...unique.values()].slice(0, MAX_ACTION_RECOMMENDATIONS)
+  const legacy = [...unique.values()].slice(0, MAX_ACTION_RECOMMENDATIONS)
+  if (priorityIssues.length === 0) return legacy
+
+  const legacyById = new Map(legacy.map((recommendation) => [recommendation.id, recommendation]))
+  const itemByInsightId = new Map(intelligenceItems.map((item) => [item.insight.id, item]))
+  const categoryByMetric: Record<string, HrInsight['category']> = {
+    pulse_engagement: 'engagement',
+    pulse_engagement_change: 'engagement',
+    leaver_rate: 'retention',
+    onboarding_overall: 'onboarding',
+  }
+  const merged = priorityIssues.map((issue) => {
+    const recommendation = buildPriorityRecommendation(issue)
+    const issueScope = scopeFromPriority(issue)
+    const old = [...legacyById.values()].find((entry) => {
+      const insight = itemByInsightId.get(entry.insightId ?? '')?.insight
+      return insight?.category === categoryByMetric[issue.metric] &&
+        insight.scope.kind === issueScope.kind && insight.scope.key === issueScope.key
+    })
+    if (!old) return recommendation
+
+    legacyById.delete(old.id)
+    return { ...recommendation, id: old.id, insightId: old.insightId }
+  })
+
+  const seen = new Set(merged.map((entry) => `${entry.affectedScope}:${entry.title}`))
+  for (const recommendation of legacyById.values()) {
+    const key = `${recommendation.affectedScope}:${recommendation.title}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      merged.push(recommendation)
+    }
+  }
+  return merged.sort(
+    (a, b) => b.priorityScore - a.priorityScore || a.id.localeCompare(b.id),
+  )
 }
 
 /* --------------------------------------- recommendation → approved action */
@@ -277,7 +394,8 @@ export function createActionFromReview(
   return {
     id,
     sourceRecommendationId: recommendation.id,
-    insightId: recommendation.insightId,
+    ...(recommendation.insightId ? { insightId: recommendation.insightId } : {}),
+    ...(recommendation.issueId ? { issueId: recommendation.issueId } : {}),
 
     title: draft.title.trim(),
     description: draft.description.trim(),
@@ -287,6 +405,7 @@ export function createActionFromReview(
 
     priorityScoreAtCreation: recommendation.priorityScore,
     priorityLevelAtCreation: recommendation.priorityLevel,
+    evidenceSources: [...recommendation.evidenceSources],
 
     owner: draft.owner,
     startDate: draft.startDate,
@@ -306,7 +425,31 @@ export function createActionFromReview(
 
     createdAt: now,
     updatedAt: now,
+    approvedAt: now,
   }
+}
+
+/** Planned is the existing Action Centre's approved state; terminal states do not reopen. */
+export function canTransitionActionStatus(
+  current: ActionExecutionStatus,
+  next: ActionExecutionStatus,
+): boolean {
+  if (current === 'planned') return next === 'in-progress' || next === 'cancelled'
+  if (current === 'in-progress') return next === 'completed' || next === 'cancelled'
+  return false
+}
+
+export function applyActionAssignment(
+  action: HrAction,
+  draft: ActionAssignmentDraft,
+  now: string,
+): HrAction {
+  const owner = draft.owner.trim()
+  if (action.status === 'completed' || action.status === 'cancelled' ||
+      owner.length === 0 || !isValidIsoDate(draft.dueDate) ||
+      isBefore(draft.dueDate, action.startDate)) return action
+  if (owner === action.owner && draft.dueDate === action.dueDate) return action
+  return { ...action, owner, dueDate: draft.dueDate, editedByHr: true, updatedAt: now }
 }
 
 /**
@@ -320,7 +463,7 @@ export function applyActionStatus(
   status: ActionExecutionStatus,
   now: string,
 ): HrAction {
-  if (action.status === status) return action
+  if (!canTransitionActionStatus(action.status, status)) return action
   return {
     ...action,
     status,

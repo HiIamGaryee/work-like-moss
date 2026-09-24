@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useHrIntelligence } from '@/hooks/use-hr-intelligence'
 import {
+  applyActionAssignment,
   applyActionStatus,
   createActionFromReview,
   generateActionRecommendations,
@@ -17,6 +18,7 @@ import {
 import type { ActionRecord, HrDataset } from '@/types/hr-data'
 import type {
   ActionExecutionStatus,
+  ActionAssignmentDraft,
   ActionReviewDraft,
   HrAction,
   RecommendationReviewMap,
@@ -55,6 +57,7 @@ type HrActionsState = {
   approveAction: (recommendation: RecommendedAction, draft: ActionReviewDraft) => void
   rejectRecommendation: (recommendationId: string, reason?: string) => void
   updateAction: (actionId: string, status: ActionExecutionStatus) => void
+  updateActionAssignment: (actionId: string, draft: ActionAssignmentDraft) => void
   resetDemo: () => void
 }
 
@@ -74,7 +77,10 @@ export function useHrActions(): HrActionsState {
     saveDemoActions(demoActions)
   }, [demoActions])
 
-  const generated = useMemo(() => generateActionRecommendations(items), [items])
+  const generated = useMemo(
+    () => generateActionRecommendations(items, analytics?.priorities ?? []),
+    [items, analytics],
+  )
 
   /** Generated recommendations are pure; the review status is layered on top. */
   const recommendations = useMemo(
@@ -88,31 +94,42 @@ export function useHrActions(): HrActionsState {
 
   const approveAction = useCallback(
     (recommendation: RecommendedAction, draft: ActionReviewDraft) => {
+      if (recommendation.reviewStatus !== 'pending-review' ||
+          reviews[recommendation.id]?.status === 'approved' ||
+          reviews[recommendation.id]?.status === 'rejected') return
       const action = createActionFromReview(
         recommendation,
         draft,
         createDemoActionId(),
         new Date().toISOString(),
       )
-      setDemoActions((current) => [action, ...current])
+      setDemoActions((current) =>
+        current.some((entry) => entry.sourceRecommendationId === recommendation.id)
+          ? current
+          : [action, ...current],
+      )
       setReviews((current) => ({
         ...current,
         [recommendation.id]: { status: 'approved', reviewedAt: action.createdAt },
       }))
     },
-    [],
+    [reviews],
   )
 
   /** A rejected recommendation is marked, never deleted — the decision is data. */
   const rejectRecommendation = useCallback((recommendationId: string, reason?: string) => {
-    setReviews((current) => ({
-      ...current,
-      [recommendationId]: {
-        status: 'rejected',
-        reviewedAt: new Date().toISOString(),
-        ...(reason ? { rejectionReason: reason } : {}),
-      },
-    }))
+    setReviews((current) =>
+      current[recommendationId]
+        ? current
+        : {
+            ...current,
+            [recommendationId]: {
+              status: 'rejected',
+              reviewedAt: new Date().toISOString(),
+              ...(reason ? { rejectionReason: reason } : {}),
+            },
+          },
+    )
   }, [])
 
   const updateAction = useCallback((actionId: string, status: ActionExecutionStatus) => {
@@ -120,6 +137,15 @@ export function useHrActions(): HrActionsState {
     setDemoActions((current) =>
       current.map((action) =>
         action.id === actionId ? applyActionStatus(action, status, now) : action,
+      ),
+    )
+  }, [])
+
+  const updateActionAssignment = useCallback((actionId: string, draft: ActionAssignmentDraft) => {
+    const now = new Date().toISOString()
+    setDemoActions((current) =>
+      current.map((action) =>
+        action.id === actionId ? applyActionAssignment(action, draft, now) : action,
       ),
     )
   }, [])
@@ -145,6 +171,7 @@ export function useHrActions(): HrActionsState {
     approveAction,
     rejectRecommendation,
     updateAction,
+    updateActionAssignment,
     resetDemo,
   }
 }

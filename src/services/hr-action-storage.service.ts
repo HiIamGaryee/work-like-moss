@@ -10,6 +10,7 @@ import type {
 } from '@/types/hr-actions'
 import type { ImpactMetricKey, ImpactScope } from '@/types/hr-impact'
 import type { PriorityLevel } from '@/types/hr-intelligence'
+import type { InsightDataSource } from '@/types/hr-insights'
 import { isValidIsoDate } from '@/utils/date'
 
 /**
@@ -73,6 +74,9 @@ function parseImpactScope(value: unknown): ImpactScope | undefined {
   return { kind: value.kind as ImpactScope['kind'], key: key === null ? null : key }
 }
 const PRIORITY_LEVELS: readonly PriorityLevel[] = ['critical', 'high', 'medium', 'low']
+const EVIDENCE_SOURCES: readonly InsightDataSource[] = [
+  'Employees', 'Onboarding Survey', 'Pulse Survey', 'Exit Survey', 'Action Tracker',
+]
 
 /* ------------------------------------------------------------ storage access */
 
@@ -160,6 +164,16 @@ function parseAction(value: unknown): HrAction | null {
       ? { sourceRecommendationId: value.sourceRecommendationId }
       : {}),
     ...(isText(value.insightId) ? { insightId: value.insightId } : {}),
+    ...(isText(value.issueId) ? { issueId: value.issueId } : {}),
+    ...(Array.isArray(value.evidenceSources)
+      ? {
+          evidenceSources: value.evidenceSources.filter(
+            (source: unknown): source is InsightDataSource =>
+              typeof source === 'string' &&
+              EVIDENCE_SOURCES.includes(source as InsightDataSource),
+          ),
+        }
+      : {}),
     ...(typeof value.priorityScoreAtCreation === 'number' &&
     Number.isFinite(value.priorityScoreAtCreation)
       ? { priorityScoreAtCreation: value.priorityScoreAtCreation }
@@ -170,6 +184,7 @@ function parseAction(value: unknown): HrAction | null {
     ...(impactMetricKey ? { impactMetricKey } : {}),
     ...(impactScope ? { impactScope } : {}),
     ...(isText(value.completedAt) ? { completedAt: value.completedAt } : {}),
+    ...(isText(value.approvedAt) ? { approvedAt: value.approvedAt } : {}),
   }
 }
 

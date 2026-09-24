@@ -24,9 +24,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ACTION_RULES_NOTE, LOCAL_STORAGE_NOTE } from '@/data/hr-action-targets'
-import { PRIORITY_LEVEL_LABELS, PRIORITY_LEVEL_ORDER } from '@/data/hr-priority-rules'
+import { PRIORITY_LEVEL_LABELS } from '@/data/hr-priority-rules'
 import { useHrActions } from '@/hooks/use-hr-actions'
-import type { ActionExecutionStatus, HrAction, RecommendedAction } from '@/types/hr-actions'
+import type {
+  ActionAssignmentDraft,
+  ActionExecutionStatus,
+  HrAction,
+  RecommendedAction,
+} from '@/types/hr-actions'
 import { todayIsoDate } from '@/utils/date'
 import { formatCount } from '@/utils/format'
 import { isActionOverdue } from '@/utils/hr-action-view'
@@ -36,13 +41,18 @@ import { isActionOverdue } from '@/utils/hr-action-view'
 const ACTION_TABS = [
   {
     key: 'recommendations',
-    label: 'Recommendations',
+    label: 'Suggested Actions',
     description: 'System-generated interventions awaiting HR review.',
   },
   {
     key: 'active',
     label: 'Active Actions',
     description: 'Approved demo actions currently being tracked.',
+  },
+  {
+    key: 'completed',
+    label: 'Completed Actions',
+    description: 'Completed activity is recorded here; outcome improvement is not implied.',
   },
   {
     key: 'existing',
@@ -54,7 +64,7 @@ const ACTION_TABS = [
 type ActionTabKey = (typeof ACTION_TABS)[number]['key']
 
 const REVIEW_FILTERS = [
-  { key: 'pending-review', label: 'Pending review' },
+  { key: 'pending-review', label: 'Suggested' },
   { key: 'rejected', label: 'Rejected' },
   { key: 'all', label: 'All recommendations' },
 ] as const
@@ -72,10 +82,8 @@ type PriorityFilterKey = (typeof PRIORITY_FILTERS)[number]['key']
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'All statuses' },
-  { key: 'planned', label: 'Planned' },
+  { key: 'planned', label: 'Approved' },
   { key: 'in-progress', label: 'In Progress' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'cancelled', label: 'Cancelled' },
   { key: 'overdue', label: 'Overdue' },
 ] as const
 
@@ -137,6 +145,7 @@ export function ActionsPage() {
     approveAction,
     rejectRecommendation,
     updateAction,
+    updateActionAssignment,
     resetDemo,
   } = useHrActions()
 
@@ -150,6 +159,7 @@ export function ActionsPage() {
 
   const today = todayIsoDate()
   const focusId = searchParams.get('recommendation')
+  const focusIssueId = searchParams.get('issue')
 
   /**
    * `/actions?recommendation=<id>` arrives from an insight's "Recommended Next
@@ -157,16 +167,20 @@ export function ActionsPage() {
    * never opens a review panel for something already approved.
    */
   useEffect(() => {
-    if (!focusId || isLoading) return
+    if ((!focusId && !focusIssueId) || isLoading) return
 
-    const recommendation = recommendations.find((entry) => entry.id === focusId)
+    const recommendation = recommendations.find((entry) =>
+      focusIssueId ? entry.issueId === focusIssueId : entry.id === focusId,
+    )
     if (recommendation) {
       const linkedAction = activeActions.find(
         (action) => action.sourceRecommendationId === recommendation.id,
       )
 
       if (recommendation.reviewStatus === 'approved' && linkedAction) {
-        setTab('active')
+        setTab(linkedAction.status === 'completed' || linkedAction.status === 'cancelled'
+          ? 'completed'
+          : 'active')
         setDetailAction(linkedAction)
       } else if (recommendation.reviewStatus === 'rejected') {
         setTab('recommendations')
@@ -182,11 +196,12 @@ export function ActionsPage() {
       (current) => {
         const next = new URLSearchParams(current)
         next.delete('recommendation')
+        next.delete('issue')
         return next
       },
       { replace: true },
     )
-  }, [focusId, isLoading, recommendations, activeActions, setSearchParams])
+  }, [focusId, focusIssueId, isLoading, recommendations, activeActions, setSearchParams])
 
   const shownRecommendations = useMemo(
     () =>
@@ -197,7 +212,6 @@ export function ActionsPage() {
         .filter((entry) => (priorityFilter === 'all' ? true : entry.priorityLevel === priorityFilter))
         .sort(
           (a, b) =>
-            PRIORITY_LEVEL_ORDER[a.priorityLevel] - PRIORITY_LEVEL_ORDER[b.priorityLevel] ||
             b.priorityScore - a.priorityScore ||
             a.id.localeCompare(b.id),
         ),
@@ -207,13 +221,31 @@ export function ActionsPage() {
   const shownActions = useMemo(
     () =>
       activeActions
+        .filter((action) => action.status === 'planned' || action.status === 'in-progress')
         .filter((action) => {
           if (statusFilter === 'all') return true
           if (statusFilter === 'overdue') return isActionOverdue(action, today)
           return action.status === statusFilter
         })
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id)),
+        .sort((a, b) =>
+          Number(isActionOverdue(b, today)) - Number(isActionOverdue(a, today)) ||
+          a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id),
+        ),
     [activeActions, statusFilter, today],
+  )
+
+  const completedActions = useMemo(
+    () => activeActions
+      .filter((action) => action.status === 'completed')
+      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '') ||
+        a.id.localeCompare(b.id)),
+    [activeActions],
+  )
+  const cancelledActions = useMemo(
+    () => activeActions
+      .filter((action) => action.status === 'cancelled')
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id)),
+    [activeActions],
   )
 
   const pendingCount = recommendations.filter(
@@ -225,6 +257,13 @@ export function ActionsPage() {
     setDetailAction((current) =>
       current && current.id === actionId ? { ...current, status } : current,
     )
+  }
+
+  const handleAssignmentChange = (actionId: string, draft: ActionAssignmentDraft): void => {
+    updateActionAssignment(actionId, draft)
+    setDetailAction((current) => current && current.id === actionId
+      ? { ...current, owner: draft.owner.trim(), dueDate: draft.dueDate, editedByHr: true }
+      : current)
   }
 
   const handleReset = (): void => {
@@ -319,7 +358,7 @@ export function ActionsPage() {
                     <EmptyState
                       icon={ShieldCheck}
                       title="No actions currently require HR review."
-                      description="Recommendations appear here for prioritised issues that clear the minimum priority rule."
+                      description="Group-level priority issues and supported signals appear here for HR review."
                     />
                   </CardContent>
                 </Card>
@@ -381,6 +420,49 @@ export function ActionsPage() {
               )}
             </TabsContent>
 
+            <TabsContent value="completed" className="space-y-4 pt-2">
+              <p className="text-sm text-muted-foreground">{ACTION_TABS[2].description}</p>
+              {completedActions.length === 0 ? (
+                <Card>
+                  <CardContent>
+                    <EmptyState
+                      icon={ListChecks}
+                      title="No completed actions yet."
+                      description="Completed activities will appear here without claiming the HR outcome improved."
+                    />
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                  {completedActions.map((action) => (
+                    <ActiveActionCard
+                      key={action.id}
+                      action={action}
+                      today={today}
+                      onStatusChange={handleStatusChange}
+                      onOpenDetail={setDetailAction}
+                    />
+                  ))}
+                </div>
+              )}
+              {cancelledActions.length > 0 ? (
+                <section className="space-y-3 border-t pt-4">
+                  <h3 className="text-sm font-medium">Cancelled action history</h3>
+                  <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                    {cancelledActions.map((action) => (
+                      <ActiveActionCard
+                        key={action.id}
+                        action={action}
+                        today={today}
+                        onStatusChange={handleStatusChange}
+                        onOpenDetail={setDetailAction}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </TabsContent>
+
             <TabsContent value="existing" className="pt-2">
               <Card className="min-w-0">
                 <CardHeader>
@@ -391,7 +473,7 @@ export function ActionsPage() {
                     </Badge>
                   </div>
                   <CardDescription>
-                    {ACTION_TABS[2].description} These records are read-only and are never modified
+                    {ACTION_TABS[3].description} These records are read-only and are never modified
                     by this prototype.
                   </CardDescription>
                 </CardHeader>
@@ -422,6 +504,7 @@ export function ActionsPage() {
         action={detailAction}
         today={today}
         onClose={() => setDetailAction(null)}
+        onUpdateAssignment={handleAssignmentChange}
       />
     </div>
   )
