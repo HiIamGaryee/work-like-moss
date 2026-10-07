@@ -1,6 +1,7 @@
 import { DatasetError } from '@/components/dataset-status'
 import { ActionProgress } from '@/components/dashboard/action-progress'
 import { AttentionToday } from '@/components/dashboard/attention-today'
+import { ManagementAttention } from '@/components/insights/management-attention'
 import { DecisionLoopCard } from '@/components/dashboard/decision-loop-card'
 import { DashboardSkeleton } from '@/components/dashboard/dashboard-skeleton'
 import { DivisionOverview } from '@/components/dashboard/division-overview'
@@ -46,6 +47,12 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
       hint: METRIC_HINTS.leaverRate,
     },
     {
+      label: 'Exit Records',
+      value: formatCount(overview.leavers),
+      description: `${formatCount(analytics.exits.responseCount)} exit survey responses`,
+      hint: METRIC_HINTS.exitRecords,
+    },
+    {
       label: 'Pulse Engagement',
       value: formatScoreOutOf(overview.latestPulse.engagement, SCORE_SCALE.max),
       description: overview.latestPulse.wave
@@ -76,7 +83,16 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
 }
 
 export function OverviewPage() {
-  const { analytics, topPriorityItems, recommendations, activeAutomations, isLoading, error, retry } =
+  const {
+    analytics,
+    intelligenceItems,
+    topPriorityItems,
+    recommendations,
+    activeAutomations,
+    isLoading,
+    error,
+    retry,
+  } =
     useHrAutomations()
   const { summary: impactSummary, demoActions } = useHrImpact()
   const topPriority = topPriorityItems[0] ?? null
@@ -108,7 +124,7 @@ export function OverviewPage() {
 
       {analytics ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {buildKpis(analytics).map((kpi) => (
               <MetricCard key={kpi.label} {...kpi} />
             ))}
@@ -143,6 +159,13 @@ export function OverviewPage() {
           />
 
           <DivisionOverview divisions={analytics.divisions} />
+
+          <ManagementAttention
+            items={intelligenceItems}
+            analytics={analytics}
+            groupOnly
+            alwaysVisible
+          />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <AttentionToday items={activeAutomations} totalActive={activeAutomations.length} />

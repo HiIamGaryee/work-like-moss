@@ -28,6 +28,7 @@ import { PRIORITY_LEVEL_LABELS } from '@/data/hr-priority-rules'
 import { useHrActions } from '@/hooks/use-hr-actions'
 import type {
   ActionAssignmentDraft,
+  ActionDeliveryDraft,
   ActionExecutionStatus,
   HrAction,
   RecommendedAction,
@@ -146,6 +147,7 @@ export function ActionsPage() {
     rejectRecommendation,
     updateAction,
     updateActionAssignment,
+    updateActionDelivery,
     resetDemo,
   } = useHrActions()
 
@@ -253,16 +255,67 @@ export function ActionsPage() {
   ).length
 
   const handleStatusChange = (actionId: string, status: ActionExecutionStatus): void => {
+    const now = new Date().toISOString()
     updateAction(actionId, status)
     setDetailAction((current) =>
-      current && current.id === actionId ? { ...current, status } : current,
+      current && current.id === actionId
+        ? {
+            ...current,
+            status,
+            updatedAt: now,
+            history: [
+              ...current.history,
+              {
+                timestamp: now,
+                type: status === 'in-progress' ? 'started' : status === 'completed' ? 'completed' : 'edited',
+                description: status === 'in-progress'
+                  ? 'Action marked in progress.'
+                  : status === 'completed'
+                    ? 'Action marked completed. Outcome remains separate.'
+                    : 'Action cancelled.',
+              },
+            ],
+          }
+        : current,
     )
   }
 
   const handleAssignmentChange = (actionId: string, draft: ActionAssignmentDraft): void => {
+    const now = new Date().toISOString()
     updateActionAssignment(actionId, draft)
     setDetailAction((current) => current && current.id === actionId
-      ? { ...current, owner: draft.owner.trim(), dueDate: draft.dueDate, editedByHr: true }
+      ? {
+          ...current,
+          owner: draft.owner.trim(),
+          dueDate: draft.dueDate,
+          editedByHr: true,
+          updatedAt: now,
+          history: [...current.history, { timestamp: now, type: 'edited', description: 'Owner or due date updated by HR.' }],
+        }
+      : current)
+  }
+
+  const handleDeliveryChange = (actionId: string, draft: ActionDeliveryDraft): void => {
+    const now = new Date().toISOString()
+    updateActionDelivery(actionId, draft)
+    setDetailAction((current) => current && current.id === actionId
+      ? {
+          ...current,
+          delivery: {
+            ...draft,
+            affectedGroup: draft.affectedGroup?.trim() || undefined,
+            deliveryNote: draft.deliveryNote?.trim() || undefined,
+            coveragePercentage: draft.intendedAudienceCount && draft.reachedAudienceCount !== undefined
+              ? Math.round((draft.reachedAudienceCount / draft.intendedAudienceCount) * 1000) / 10
+              : undefined,
+          },
+          updatedAt: now,
+          history: [...current.history, {
+            timestamp: now,
+            type: 'delivery-updated',
+            description: `Delivery status updated to ${draft.status}.`,
+          }],
+        }
       : current)
   }
 
@@ -505,6 +558,7 @@ export function ActionsPage() {
         today={today}
         onClose={() => setDetailAction(null)}
         onUpdateAssignment={handleAssignmentChange}
+        onUpdateDelivery={handleDeliveryChange}
       />
     </div>
   )

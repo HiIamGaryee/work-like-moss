@@ -49,6 +49,7 @@ type HrAutomationsState = {
    * single computation and the approved-action state to a single copy.
    */
   analytics: HrAnalytics | null
+  intelligenceItems: HrIntelligenceItem[]
   topPriorityItems: HrIntelligenceItem[]
   recommendations: RecommendedAction[]
   todayIso: string
@@ -69,7 +70,17 @@ type HrAutomationsState = {
 const captureNow = (): Date => new Date()
 
 export function useHrAutomations(): HrAutomationsState {
-  const { data, analytics, activeActions, topPriorityItems, recommendations, isLoading, error, retry } =
+  const {
+    data,
+    analytics,
+    activeActions,
+    intelligenceItems,
+    topPriorityItems,
+    recommendations,
+    isLoading,
+    error,
+    retry,
+  } =
     useHrActions()
   const [now] = useState(captureNow)
   const [state, setState] = useState<AutomationDemoState>(loadAutomationState)
@@ -150,6 +161,7 @@ export function useHrAutomations(): HrAutomationsState {
     summary,
     demoActions: activeActions,
     analytics,
+    intelligenceItems,
     topPriorityItems,
     recommendations,
     todayIso: todayIsoDate(),

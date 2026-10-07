@@ -3,6 +3,7 @@ import { ActionStatusBadge } from '@/components/actions/action-status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ACTION_DELIVERY_STATUS_LABELS } from '@/data/hr-action-catalog'
 import { ACTION_REMINDER_LABELS, actionReminderState } from '@/data/hr-automation-rules'
 import type { ActionExecutionStatus, HrAction } from '@/types/hr-actions'
 import { formatDate } from '@/utils/format'
@@ -56,6 +57,11 @@ export function ActiveActionCard({
           {action.editedByHr ? (
             <Badge variant="outline" className="shrink-0">
               Edited by HR
+            </Badge>
+          ) : null}
+          {action.delivery ? (
+            <Badge variant="outline" className="shrink-0">
+              Delivery: {ACTION_DELIVERY_STATUS_LABELS[action.delivery.status]}
             </Badge>
           ) : null}
         </div>

@@ -5,6 +5,8 @@ import { DatasetError } from '@/components/dataset-status'
 import { EmptyState } from '@/components/empty-state'
 import { EvidenceTrail } from '@/components/insights/evidence-trail'
 import { InsightAnalysisHeader } from '@/components/insights/insight-analysis-header'
+import { InvestigationAreas } from '@/components/insights/investigation-areas'
+import { IssueEvidenceSection } from '@/components/insights/issue-evidence-section'
 import { LikelyDriverCard } from '@/components/insights/likely-driver-card'
 import { PriorityScoreCard } from '@/components/insights/priority-score-card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { CAUSATION_DISCLAIMER, NO_DRIVER_MESSAGE } from '@/data/hr-root-cause-rules'
 import { useHrImpact } from '@/hooks/use-hr-impact'
+import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
 
 function AnalysisSkeleton() {
   return (
@@ -62,7 +65,7 @@ function AnalysisSkeleton() {
  */
 export function InsightAnalysisPage() {
   const { insightId } = useParams<{ insightId: string }>()
-  const { intelligenceItems, recommendations, demoActions, impacts, isLoading, error, retry } =
+  const { analytics, intelligenceItems, recommendations, demoActions, impacts, isLoading, error, retry } =
     useHrImpact()
 
   const item = intelligenceItems.find((entry) => entry.insight.id === insightId) ?? null
@@ -109,23 +112,31 @@ export function InsightAnalysisPage() {
   }
 
   const { insight, likelyDrivers, priority } = item
+  const privacySuppressed = isInsightDetailSuppressed(item, analytics)
+  const visibleDrivers = privacySuppressed ? [] : likelyDrivers
 
   return (
     <div className="w-full space-y-6">
-      <InsightAnalysisHeader insight={insight} priority={priority} />
+      <InsightAnalysisHeader
+        insight={insight}
+        priority={priority}
+        privacySuppressed={privacySuppressed}
+      />
+
+      <IssueEvidenceSection item={item} analytics={analytics} drivers={visibleDrivers} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Likely Drivers</CardTitle>
+              <CardTitle>Possible Explanation</CardTitle>
               <CardDescription>{CAUSATION_DISCLAIMER}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {likelyDrivers.length === 0 ? (
+              {visibleDrivers.length === 0 ? (
                 <EmptyState icon={Sparkles} title={NO_DRIVER_MESSAGE} />
               ) : (
-                likelyDrivers.map((driver, index) => (
+                visibleDrivers.map((driver, index) => (
                   <LikelyDriverCard key={driver.id} driver={driver} rank={index + 1} />
                 ))
               )}
@@ -133,10 +144,24 @@ export function InsightAnalysisPage() {
           </Card>
         </div>
 
-        <PriorityScoreCard priority={priority} />
+        {privacySuppressed ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Priority Assessment</CardTitle>
+              <CardDescription>Priority remains protected until the minimum response threshold is met.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Insufficient responses to display detailed priority evidence.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <PriorityScoreCard priority={priority} />
+        )}
       </div>
 
-      {recommendation ? (
+      <InvestigationAreas drivers={visibleDrivers} />
+
+      {recommendation && !privacySuppressed ? (
         <RecommendedNextStep
           recommendation={recommendation}
           action={linkedAction}
@@ -144,7 +169,17 @@ export function InsightAnalysisPage() {
         />
       ) : null}
 
-      <EvidenceTrail insight={insight} drivers={likelyDrivers} />
+      {privacySuppressed ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              The evidence trail is hidden until comparable group responses are available.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <EvidenceTrail insight={insight} drivers={visibleDrivers} />
+      )}
     </div>
   )
 }

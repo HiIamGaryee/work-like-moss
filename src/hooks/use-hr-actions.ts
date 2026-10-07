@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useHrIntelligence } from '@/hooks/use-hr-intelligence'
 import {
   applyActionAssignment,
+  applyActionDelivery,
   applyActionStatus,
   createActionFromReview,
   generateActionRecommendations,
@@ -19,6 +20,7 @@ import type { ActionRecord, HrDataset } from '@/types/hr-data'
 import type {
   ActionExecutionStatus,
   ActionAssignmentDraft,
+  ActionDeliveryDraft,
   ActionReviewDraft,
   HrAction,
   RecommendationReviewMap,
@@ -58,6 +60,7 @@ type HrActionsState = {
   rejectRecommendation: (recommendationId: string, reason?: string) => void
   updateAction: (actionId: string, status: ActionExecutionStatus) => void
   updateActionAssignment: (actionId: string, draft: ActionAssignmentDraft) => void
+  updateActionDelivery: (actionId: string, draft: ActionDeliveryDraft) => void
   resetDemo: () => void
 }
 
@@ -87,9 +90,13 @@ export function useHrActions(): HrActionsState {
     () =>
       generated.map((recommendation) => ({
         ...recommendation,
-        reviewStatus: reviews[recommendation.id]?.status ?? 'pending-review',
+        reviewStatus:
+          reviews[recommendation.id]?.status ??
+          (demoActions.some((action) => action.sourceRecommendationId === recommendation.id)
+            ? 'approved'
+            : 'pending-review'),
       })),
-    [generated, reviews],
+    [generated, reviews, demoActions],
   )
 
   const approveAction = useCallback(
@@ -150,6 +157,15 @@ export function useHrActions(): HrActionsState {
     )
   }, [])
 
+  const updateActionDelivery = useCallback((actionId: string, draft: ActionDeliveryDraft) => {
+    const now = new Date().toISOString()
+    setDemoActions((current) =>
+      current.map((action) =>
+        action.id === actionId ? applyActionDelivery(action, draft, now) : action,
+      ),
+    )
+  }, [])
+
   const resetDemo = useCallback(() => {
     clearDemoActionState()
     setReviews({})
@@ -172,6 +188,7 @@ export function useHrActions(): HrActionsState {
     rejectRecommendation,
     updateAction,
     updateActionAssignment,
+    updateActionDelivery,
     resetDemo,
   }
 }

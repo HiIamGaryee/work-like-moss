@@ -19,6 +19,7 @@ import {
 type InsightAnalysisHeaderProps = {
   insight: HrInsight
   priority: InsightPriority
+  privacySuppressed?: boolean
 }
 
 const metricValue = (insight: HrInsight, value: number | null | undefined): string =>
@@ -28,25 +29,40 @@ const metricValue = (insight: HrInsight, value: number | null | undefined): stri
       ? formatPercentage(value)
       : formatScoreOutOf(value, SCORE_SCALE.max)
 
-export function InsightAnalysisHeader({ insight, priority }: InsightAnalysisHeaderProps) {
+const signalStatus = (insight: HrInsight): 'REVIEW' | 'VERIFY' | 'ONGOING' => {
+  if (insight.signalStrength === 'strong') return 'REVIEW'
+  if (insight.signalStrength === 'moderate') return 'VERIFY'
+  return 'ONGOING'
+}
+
+export function InsightAnalysisHeader({
+  insight,
+  priority,
+  privacySuppressed = false,
+}: InsightAnalysisHeaderProps) {
   const summaryFields = [
     { key: 'scope', label: 'Affected', value: insight.affectedScope },
-    { key: 'metric', label: insight.metricLabel, value: metricValue(insight, insight.currentValue) },
-    { key: 'reference', label: 'Compared with', value: metricValue(insight, insight.referenceValue) },
+    ...(privacySuppressed
+      ? [{ key: 'privacy', label: 'Evidence access', value: 'Insufficient responses' }]
+      : [
+          { key: 'metric', label: 'Current value', value: metricValue(insight, insight.currentValue) },
+          { key: 'reference', label: 'Company benchmark', value: metricValue(insight, insight.referenceValue) },
+        ]),
     {
       key: 'difference',
-      label: 'Difference',
+      label: 'Difference / variance',
       value:
-        insight.difference === null || insight.difference === undefined
+        privacySuppressed || insight.difference === null || insight.difference === undefined
           ? EMPTY_VALUE
           : `${formatDelta(insight.difference)}${isRateMetricLabel(insight.metricLabel) ? ' pp' : ''}`,
     },
     { key: 'strength', label: 'Signal strength', value: STRENGTH_LABELS[insight.signalStrength] },
+    { key: 'status', label: 'Signal status', value: signalStatus(insight) },
     {
       key: 'sample',
       label: 'Sample',
       value:
-        insight.sampleSize === undefined
+        privacySuppressed || insight.sampleSize === undefined
           ? EMPTY_VALUE
           : `${formatCount(insight.sampleSize)} ${insight.sampleLabel ?? 'records'}`,
     },
@@ -74,18 +90,26 @@ export function InsightAnalysisHeader({ insight, priority }: InsightAnalysisHead
             <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               {CATEGORY_LABELS[insight.category]}
             </span>
-            {insight.dataSources.length > 1 ? (
-              <Badge variant="outline">Cross-source signal</Badge>
+            {insight.dataSources.length > 1 && !privacySuppressed ? (
+              <Badge variant="outline">
+                Evidence strength: {STRENGTH_LABELS[insight.signalStrength]} · {insight.dataSources.length} sources
+              </Badge>
             ) : null}
             <span className="ml-auto">
               <PriorityBadge level={priority.level} score={priority.score} />
             </span>
           </div>
-          <CardTitle className="text-xl leading-snug break-words">{insight.title}</CardTitle>
+          <CardTitle className="text-xl leading-snug break-words">
+            {privacySuppressed ? 'Workforce signal requires more responses' : insight.title}
+          </CardTitle>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">{insight.summary}</p>
+          <p className="text-sm text-muted-foreground">
+            {privacySuppressed
+              ? 'Detailed group metrics and evidence are hidden until the minimum response threshold is met.'
+              : insight.summary}
+          </p>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-4 sm:grid-cols-3 lg:grid-cols-6">
             {summaryFields.map(({ key, label, value }) => (
@@ -96,13 +120,15 @@ export function InsightAnalysisHeader({ insight, priority }: InsightAnalysisHead
             ))}
           </dl>
 
-          <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
-            {insight.dataSources.map((source) => (
-              <Badge key={source} variant="ghost" className="text-muted-foreground">
-                {source}
-              </Badge>
-            ))}
-          </div>
+          {!privacySuppressed ? (
+            <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+              {insight.dataSources.map((source) => (
+                <Badge key={source} variant="ghost" className="text-muted-foreground">
+                  {source}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

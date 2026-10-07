@@ -1,10 +1,20 @@
 import type { TargetDirection } from '@/data/hr-action-targets'
 import type { EvidenceTheme } from '@/types/hr-analytics'
 import type {
+  ActionDeliveryStatus,
   ActionExecutionStatus,
   RecommendationDriverKey,
   RecommendedActionStatus,
 } from '@/types/hr-actions'
+
+export const ACTION_DELIVERY_STATUS_LABELS: Record<ActionDeliveryStatus, string> = {
+  'not-started': 'Not started',
+  scheduled: 'Scheduled',
+  'in-progress': 'In progress',
+  delivered: 'Delivered',
+  'partially-delivered': 'Partially delivered',
+  cancelled: 'Cancelled',
+}
 import type { DriverCategory, InsightScope, InsightScopeKind } from '@/types/hr-insights'
 
 /**

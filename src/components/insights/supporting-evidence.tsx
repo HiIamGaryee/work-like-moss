@@ -16,9 +16,9 @@ import {
 } from '@/utils/format'
 
 const SOURCE_LABELS: Record<EvidenceSource, string> = {
-  pulse: 'Pulse',
-  onboarding: 'Onboarding',
-  exit: 'Exit',
+  pulse: 'Pulse Survey',
+  onboarding: 'Onboarding Survey',
+  exit: 'Exit Survey',
 }
 
 const STRENGTH_LABELS: Record<EvidenceStrength, string> = {
