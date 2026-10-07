@@ -4,8 +4,12 @@ import type { RecommendedAction } from '@/types/hr-actions'
 import type {
   HrAiDraft,
   HrAiDraftInput,
+  HrAiGenerationOptions,
   HrAiDraftResult,
+  HrAiDepth,
+  HrAiMode,
 } from '@/types/hr-ai'
+import { DEFAULT_HR_AI_DEPTH, DEFAULT_HR_AI_MODE, HR_AI_FOCUS_AREAS, HR_AI_MODES } from '@/data/hr-ai-modes'
 import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
 
 /** Same-origin boundary expected to keep provider credentials server-side. */
@@ -37,8 +41,11 @@ function parseStringArray(value: unknown, max: number): string[] | null {
   return values.length <= max ? values : values.slice(0, max)
 }
 
-function parseDraft(value: unknown): HrAiDraft | null {
-  if (!isRecord(value) || !asText(value.summary) || !asText(value.possibleExplanation)) return null
+function parseDraft(value: unknown, mode: HrAiMode): HrAiDraft | null {
+  if (!isRecord(value)) return null
+  const summary = asText(value.executiveSummary) ? value.executiveSummary.trim() : asText(value.summary) ? value.summary.trim() : null
+  const possibleExplanation = asText(value.possibleExplanation) ? value.possibleExplanation.trim() : null
+  if (!summary || !possibleExplanation) return null
   if (!Array.isArray(value.evidenceThemes) || !Array.isArray(value.investigationAreas) || !Array.isArray(value.suggestedActions)) return null
 
   const evidenceThemes = value.evidenceThemes.flatMap((entry) => {
@@ -47,7 +54,11 @@ function parseDraft(value: unknown): HrAiDraft | null {
   }).slice(0, 8)
   const investigationAreas = value.investigationAreas.flatMap((entry) => {
     if (!isRecord(entry) || !asText(entry.title) || !asText(entry.reason)) return []
-    return [{ title: entry.title.trim(), reason: entry.reason.trim() }]
+    return [{
+      title: entry.title.trim(),
+      reason: entry.reason.trim(),
+      ...(asText(entry.evidenceBasis) ? { evidenceBasis: entry.evidenceBasis.trim() } : {}),
+    }]
   }).slice(0, 6)
   const suggestedActions = value.suggestedActions.flatMap((entry) => {
     if (!isRecord(entry) || !asText(entry.title) || !asText(entry.description)) return []
@@ -55,14 +66,21 @@ function parseDraft(value: unknown): HrAiDraft | null {
       title: entry.title.trim(),
       description: entry.description.trim(),
       ...(asText(entry.measurementSuggestion) ? { measurementSuggestion: entry.measurementSuggestion.trim() } : {}),
+      ...(asText(entry.suggestedOwner) ? { suggestedOwner: entry.suggestedOwner.trim() } : {}),
+      ...(asText(entry.suggestedMeasure) ? { suggestedMeasure: entry.suggestedMeasure.trim() } : {}),
     }]
   }).slice(0, 6)
   const limitations = parseStringArray(value.limitations, 8)
   if (!limitations || evidenceThemes.length === 0 || investigationAreas.length === 0 || suggestedActions.length === 0) return null
   return {
-    summary: value.summary.trim(),
+    mode,
+    executiveSummary: summary,
+    observedSignal: asText(value.observedSignal) ? value.observedSignal.trim() : summary,
+    evidenceInterpretation: asText(value.evidenceInterpretation) ? value.evidenceInterpretation.trim() : summary,
+    questionsForHr: parseStringArray(value.questionsForHr, 8) ?? [],
+    summary,
     evidenceThemes,
-    possibleExplanation: value.possibleExplanation.trim(),
+    possibleExplanation,
     investigationAreas,
     suggestedActions,
     limitations,
@@ -95,7 +113,27 @@ export function buildHrAiDraftInput(
   }
 }
 
-function fallbackDraft(item: HrIntelligenceItem, recommendation: RecommendedAction | null): HrAiDraft {
+function fallbackQuestions(mode: HrAiMode): string[] {
+  const questions: Record<HrAiMode, string[]> = {
+    'hr-business-partner': ['Is this issue concentrated in one manager or team?', 'Has anything changed operationally in this period?', 'Who should own the intervention?'],
+    'employee-engagement': ['Do employees understand career progression opportunities?', 'Are manager check-ins consistent?', 'Is belonging lower in one team or cohort?'],
+    'retention-exit': ['Are the same exit themes appearing repeatedly?', 'Do exit themes match pulse-survey concerns?', 'Is the pattern concentrated by tenure or division?'],
+    'onboarding-experience': ['How long does it take new joiners to gain usable system access?', 'Are role expectations clear in the first month?', 'Are managers completing onboarding check-ins?'],
+    'organisational-development': ['Is this an isolated process problem or a wider capability issue?', 'Does this require manager development?', 'Is there evidence of structural friction?'],
+  }
+  return questions[mode]
+}
+
+function normaliseOptions(options?: Partial<HrAiGenerationOptions>): HrAiGenerationOptions {
+  const mode = HR_AI_MODES.some((entry) => entry.key === options?.mode) ? options?.mode ?? DEFAULT_HR_AI_MODE : DEFAULT_HR_AI_MODE
+  const depth: HrAiDepth = options?.depth === 'quick' || options?.depth === 'deep' ? options.depth : DEFAULT_HR_AI_DEPTH
+  const focusAreas = (options?.focusAreas ?? []).filter((focus) => HR_AI_FOCUS_AREAS.includes(focus as (typeof HR_AI_FOCUS_AREAS)[number])).slice(0, 3)
+  const customInstruction = options?.customInstruction?.trim().slice(0, 500)
+  return { mode, depth, focusAreas, ...(customInstruction ? { customInstruction } : {}) }
+}
+
+function fallbackDraft(item: HrIntelligenceItem, recommendation: RecommendedAction | null, options?: Partial<HrAiGenerationOptions>): HrAiDraft {
+  const selected = normaliseOptions(options)
   const drivers = item.likelyDrivers
   const evidenceThemes = drivers.length > 0
     ? drivers.map((driver) => ({
@@ -108,16 +146,23 @@ function fallbackDraft(item: HrIntelligenceItem, recommendation: RecommendedActi
         reason: 'The detected signal is supported by the available aggregate workforce measures.',
         sourceCount: item.insight.dataSources.length,
       }]
+  const summary = item.insight.summary
   return {
-    summary: item.insight.summary,
+    mode: selected.mode,
+    executiveSummary: summary,
+    observedSignal: `The observed group-level signal is ${item.insight.title}.`,
+    evidenceInterpretation: summary,
+    questionsForHr: fallbackQuestions(selected.mode),
+    summary,
     evidenceThemes,
     possibleExplanation: drivers[0]?.explanation
       ? `Evidence suggests ${drivers[0].explanation.charAt(0).toLowerCase()}${drivers[0].explanation.slice(1)}`
       : 'The available data indicates a pattern that HR should validate with the affected group.',
     investigationAreas: drivers.length > 0
       ? drivers.map((driver) => ({
-          title: driver.label,
-          reason: `HR should verify whether ${driver.explanation.charAt(0).toLowerCase()}${driver.explanation.slice(1)}`,
+        title: driver.label,
+        reason: `HR should verify whether ${driver.explanation.charAt(0).toLowerCase()}${driver.explanation.slice(1)}`,
+        evidenceBasis: driver.dataSources.join(' + '),
         }))
       : [{
           title: 'Validate the signal with the affected group',
@@ -143,8 +188,11 @@ export async function generateHrDraft(
   input: HrAiDraftInput,
   item: HrIntelligenceItem,
   recommendation: RecommendedAction | null,
+  options?: Partial<HrAiGenerationOptions>,
 ): Promise<HrAiDraftResult> {
-  const fallback = fallbackDraft(item, recommendation)
+  const selected = normaliseOptions(options)
+  const requestInput: HrAiDraftInput = { ...input, ...selected }
+  const fallback = fallbackDraft(item, recommendation, selected)
   if (!isHrAiEnabled()) {
     return {
       draft: fallback,
@@ -159,12 +207,12 @@ export async function generateHrDraft(
     const response = await fetch(HR_DRAFT_API_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, guardrails: HR_DRAFT_GUARDRAILS }),
+      body: JSON.stringify({ input: requestInput, guardrails: HR_DRAFT_GUARDRAILS }),
       signal: controller.signal,
     })
     if (!response.ok) throw new Error('AI drafting endpoint unavailable')
     const payload: unknown = await response.json()
-    const draft = parseDraft(isRecord(payload) && 'draft' in payload ? payload.draft : payload)
+    const draft = parseDraft(isRecord(payload) && 'draft' in payload ? payload.draft : payload, selected.mode)
     if (!draft) throw new Error('AI drafting response was invalid')
     return { draft, source: 'ai-assisted', available: true, message: 'AI-assisted draft generated. HR review required.' }
   } catch {
@@ -182,9 +230,10 @@ export async function generateHrDraft(
 export function getFallbackHrDraft(
   item: HrIntelligenceItem,
   recommendation: RecommendedAction | null,
+  options?: Partial<HrAiGenerationOptions>,
 ): HrAiDraftResult {
   return {
-    draft: fallbackDraft(item, recommendation),
+    draft: fallbackDraft(item, recommendation, options),
     source: 'rule-based',
     available: false,
     message: 'Rule-based draft from the existing evidence and recommendation logic.',

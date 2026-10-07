@@ -6,9 +6,9 @@ import type { PriorityLevel } from '@/types/hr-intelligence'
  * Monochrome by weight, not colour: the four levels stay distinguishable in
  * greyscale and the word itself carries the meaning.
  */
-const LEVEL_VARIANTS: Record<PriorityLevel, 'default' | 'secondary' | 'outline' | 'ghost'> = {
-  critical: 'default',
-  high: 'secondary',
+const LEVEL_VARIANTS: Record<PriorityLevel, 'default' | 'secondary' | 'outline' | 'ghost' | 'destructive'> = {
+  critical: 'destructive',
+  high: 'destructive',
   medium: 'outline',
   low: 'ghost',
 }

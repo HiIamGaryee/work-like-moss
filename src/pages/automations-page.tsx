@@ -147,24 +147,26 @@ export function AutomationsPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Automations"
-        description="Surface timely employee-care and action reminders before important moments are missed."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Human approval required</Badge>
-            <AutomationRulesSheet />
-            <ResetDemoMenu
-              label="Reset automation demo"
-              menuAriaLabel="Automation options"
-              confirmTitle="Reset automation demo?"
-              confirmDescription="Handled reminders will become active again. Employee and action data will not be changed."
-              onReset={handleReset}
-            />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Follow-Up Queue"
+          description="Tasks and reviews requiring HR attention."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Human approval required</Badge>
+              <AutomationRulesSheet />
+              <ResetDemoMenu
+                label="Reset follow-up demo"
+                menuAriaLabel="Follow-Up options"
+                confirmTitle="Reset follow-up demo?"
+                confirmDescription="Handled reminders will become active again. Employee and action data will not be changed."
+                onReset={handleReset}
+              />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 

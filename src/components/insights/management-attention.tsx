@@ -93,7 +93,7 @@ export function ManagementAttention({
                 <PriorityBadge level={item.priority.level} score={suppressed ? undefined : item.priority.score} />
                 <Badge variant={statusVariant(status)}>{status}</Badge>
                 <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  View analysis
+                  View signal
                   <ArrowRight className="size-3" aria-hidden="true" />
                 </span>
               </div>

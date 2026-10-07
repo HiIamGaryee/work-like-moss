@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CAUSATION_DISCLAIMER, NO_DRIVER_MESSAGE } from '@/data/hr-root-cause-rules'
 import { useHrImpact } from '@/hooks/use-hr-impact'
 import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
+import type { HrAiGenerationOptions } from '@/types/hr-ai'
 import {
   buildHrAiDraftInput,
   generateHrDraft,
@@ -107,12 +108,12 @@ export function InsightAnalysisPage() {
           <CardContent className="space-y-4">
             <EmptyState
               icon={SearchX}
-              title="Insight not found"
+              title="Signal not found"
               description="This signal is not present in the current dataset."
             />
             <div className="flex justify-center">
               <Button variant="outline" size="sm" asChild>
-                <Link to="/insights">Back to Insights</Link>
+                <Link to="/insights">Back to Signals</Link>
               </Button>
             </div>
           </CardContent>
@@ -132,10 +133,10 @@ export function InsightAnalysisPage() {
       ? { draft: null, source: 'rule-based' as const, available: false, message: 'Insufficient responses for AI-assisted analysis.' }
       : getFallbackHrDraft(item, recommendation)
 
-  const handleGenerateAiDraft = async (): Promise<void> => {
+  const handleGenerateAiDraft = async (options: HrAiGenerationOptions): Promise<void> => {
     if (!aiInput || aiLoading) return
     setAiLoading(true)
-    const result = await generateHrDraft(aiInput, item, recommendation)
+    const result = await generateHrDraft(aiInput, item, recommendation, options)
     setAiState({ insightId: insight.id, result })
     setAiLoading(false)
   }
@@ -159,6 +160,7 @@ export function InsightAnalysisPage() {
         onGenerate={handleGenerateAiDraft}
         recommendation={privacySuppressed ? null : recommendation}
         aiEnabled={aiEnabled}
+        evidenceSources={item.insight.dataSources}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

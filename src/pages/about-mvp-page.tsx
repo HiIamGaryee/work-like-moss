@@ -7,7 +7,7 @@ import { isHrAiEnabled } from '@/services/hr-ai-draft.service'
 
 const quickLinks = [
   { label: 'Overview', href: '/' },
-  { label: 'Insights', href: '/insights' },
+  { label: 'Signals', href: '/insights' },
   { label: 'Actions', href: '/actions' },
   { label: 'Follow-Up Queue', href: '/automations' },
   { label: 'Impact', href: '/impact' },
@@ -99,6 +99,12 @@ const demoNotes = [
   'Use Reset demo on the Actions page if the walkthrough changes the demo state.',
 ] as const
 
+const copilotDemoNotes = [
+  { title: 'Choose a lens', text: 'Select the HR perspective that best fits the signal: business partnering, engagement, retention, onboarding, or organisational development.' },
+  { title: 'Open More info', text: 'Use More info beside the selector to review what the lens focuses on, the questions it considers, and the actions it may suggest.' },
+  { title: 'Generate deliberately', text: 'Switching lenses does not change the signal or automatically generate a draft. HR chooses the lens, then starts the analysis.' },
+] as const
+
 export function DemoGuidePage() {
   const aiEnabled = isHrAiEnabled()
   const completedModules = aiEnabled ? 10 : 9
@@ -127,6 +133,17 @@ export function DemoGuidePage() {
         <ol className="space-y-4">
           {demoSteps.map((step, index) => <li key={step.title} className="rounded-xl border bg-card p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">{index + 1}</span><div className="min-w-0 flex-1 space-y-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-semibold">{step.title}</h3><code className="text-xs text-muted-foreground">{step.route}</code></div>{step.link ? <Button size="sm" variant="outline" asChild><Link to={step.link}>Open page<ArrowRight className="size-3.5" aria-hidden="true" /></Link></Button> : null}</div><div className="grid gap-4 md:grid-cols-3"><div><p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Click</p><p className="mt-1 text-sm leading-5">{step.click}</p></div><div><p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Show</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{step.show}</p></div><div><p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Say</p><p className="mt-1 border-l-2 pl-3 text-sm leading-5 text-muted-foreground">“{step.say}”</p></div></div></div></div></li>)}
         </ol>
+      </section>
+
+      <section className="rounded-xl border bg-card p-5 sm:p-6" aria-labelledby="copilot-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="space-y-1"><h2 id="copilot-title" className="text-2xl font-semibold tracking-tight">AI HR Copilot</h2><p className="text-sm text-muted-foreground">Use professional HR lenses to interpret the same workforce signal in different ways.</p></div>
+          <Badge variant="outline">HR review required</Badge>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {copilotDemoNotes.map((item) => <div key={item.title} className="rounded-lg border bg-muted/20 p-4"><h3 className="text-sm font-semibold">{item.title}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{item.text}</p></div>)}
+        </div>
+        <p className="mt-5 border-t pt-4 text-sm leading-6 text-muted-foreground">“The same workforce signal can be reviewed through different professional HR lenses. The data and signal stay the same; only the AI-assisted interpretation changes.” HR remains the final decision-maker.</p>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2" aria-labelledby="prep-title">

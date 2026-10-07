@@ -76,12 +76,12 @@ export function InsightAnalysisHeader({
           className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Insights
+          Signals
         </Link>
         <span aria-hidden="true" className="text-muted-foreground">
           /
         </span>
-        <span className="text-foreground">Analysis</span>
+        <span className="text-foreground">Signal Detail</span>
       </nav>
 
       <Card>

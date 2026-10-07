@@ -106,22 +106,24 @@ export function OverviewPage() {
   ).length
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Overview"
-        description="Understand workforce health, employee experience, and retention signals."
-        actions={
-          <div className="flex flex-col items-start gap-1 sm:items-end">
-            <Badge variant="outline">Official Dummy Dataset</Badge>
-            {analytics ? (
-              <p className="text-xs text-muted-foreground">
-                {formatCount(analytics.overview.totalEmployees)} employees loaded · data through{' '}
-                {formatDate(analytics.overview.latestPulse.date)}
-              </p>
-            ) : null}
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Overview"
+          description="Workforce health and management attention at a glance."
+          actions={
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <Badge variant="outline">Official Dummy Dataset</Badge>
+              {analytics ? (
+                <p className="text-xs text-muted-foreground">
+                  {formatCount(analytics.overview.totalEmployees)} employees loaded · data through{' '}
+                  {formatDate(analytics.overview.latestPulse.date)}
+                </p>
+              ) : null}
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -129,11 +131,14 @@ export function OverviewPage() {
 
       {analytics ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {buildKpis(analytics).map((kpi) => (
-              <MetricCard key={kpi.label} {...kpi} />
-            ))}
-          </div>
+          <section className="space-y-4" aria-labelledby="overview-kpis-title">
+            <div className="space-y-1"><h2 id="overview-kpis-title" className="text-lg font-semibold tracking-tight">Workforce Snapshot</h2><p className="text-sm text-muted-foreground">Key workforce and employee-experience indicators.</p></div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {buildKpis(analytics).map((kpi) => (
+                <MetricCard key={kpi.label} {...kpi} />
+              ))}
+            </div>
+          </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="min-w-0 lg:col-span-2">
@@ -167,12 +172,15 @@ export function OverviewPage() {
 
           <DivisionOverview divisions={analytics.divisions} />
 
-          <ManagementAttention
-            items={intelligenceItems}
-            analytics={analytics}
-            groupOnly
-            alwaysVisible
-          />
+          <section className="space-y-4 border-t pt-7" aria-labelledby="overview-attention-title">
+            <div className="space-y-1"><h2 id="overview-attention-title" className="text-lg font-semibold tracking-tight">Priority Workforce Signals</h2><p className="text-sm text-muted-foreground">Group-level signals that may require HR review.</p></div>
+            <ManagementAttention
+              items={intelligenceItems}
+              analytics={analytics}
+              groupOnly
+              alwaysVisible
+            />
+          </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <AttentionToday items={activeAutomations} totalActive={activeAutomations.length} />

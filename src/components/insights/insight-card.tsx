@@ -168,7 +168,7 @@ export function InsightCard({ insight, priority, topDriverLabel, analytics }: In
             to={`/insights/${insight.id}`}
             className="ml-auto inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
           >
-            View analysis
+            View signal
             <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
         </div>

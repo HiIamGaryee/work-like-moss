@@ -128,20 +128,22 @@ export function InsightsPage() {
   )
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Insights"
-        description="Automatically detected workforce patterns from employee lifecycle and survey data."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Prototype detection rules</Badge>
-            <InfoHint
-              label="detection and priority rules"
-              hint={`${DETECTION_RULES_NOTE} ${PRIORITY_FORMULA_NOTE}`}
-            />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Signals"
+          description="Workforce patterns that may require HR attention."
+          actions={
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Prototype detection rules</Badge>
+              <InfoHint
+                label="detection and priority rules"
+                hint={`${DETECTION_RULES_NOTE} ${PRIORITY_FORMULA_NOTE}`}
+              />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -149,9 +151,21 @@ export function InsightsPage() {
 
       {analytics && !isLoading ? (
         <div className="space-y-6">
-          <InsightOverview summary={summary} latestWave={analytics.overview.latestPulse.wave} />
+          <section className="space-y-4" aria-labelledby="signal-summary-title">
+            <div className="space-y-1">
+              <h2 id="signal-summary-title" className="text-lg font-semibold tracking-tight">Signal Summary</h2>
+              <p className="text-sm text-muted-foreground">A current view of detected workforce patterns and their supporting coverage.</p>
+            </div>
+            <InsightOverview summary={summary} latestWave={analytics.overview.latestPulse.wave} />
+          </section>
 
-          <ManagementAttention items={topPriorityItems} analytics={analytics} />
+          <section className="space-y-4" aria-labelledby="management-signals-title">
+            <div className="space-y-1">
+              <h2 id="management-signals-title" className="text-lg font-semibold tracking-tight">Management Signals</h2>
+              <p className="text-sm text-muted-foreground">Highest-priority workforce patterns requiring review or verification.</p>
+            </div>
+            <ManagementAttention items={topPriorityItems} analytics={analytics} />
+          </section>
 
           {visibleItems.length === 0 ? (
             <Card>
@@ -164,7 +178,12 @@ export function InsightsPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
+            <section className="space-y-4 border-t pt-7" aria-labelledby="all-signals-title">
+              <div className="space-y-1">
+                <h2 id="all-signals-title" className="text-lg font-semibold tracking-tight">All Signals</h2>
+                <p className="text-sm text-muted-foreground">Filter and review the detected workforce patterns.</p>
+              </div>
+              <div className="space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Tabs value={tab} onValueChange={(value) => setTab(value as InsightTabKey)}>
                   <TabsList className="w-full justify-start overflow-x-auto">
@@ -208,7 +227,7 @@ export function InsightsPage() {
                 </div>
               </div>
 
-              {shown.length === 0 ? (
+                {shown.length === 0 ? (
                 <Card>
                   <CardContent>
                     <EmptyState
@@ -230,8 +249,9 @@ export function InsightsPage() {
                     />
                   ))}
                 </div>
-              )}
-            </div>
+                )}
+              </div>
+            </section>
           )}
 
           <div className="space-y-4">
