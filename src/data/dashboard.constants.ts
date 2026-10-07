@@ -18,6 +18,7 @@ export const SCORE_AXIS_TICKS = [1, 2, 3, 4, 5]
 /** Short, consistent wording for the metrics a reader could misread. */
 export const METRIC_HINTS = {
   totalEmployees: 'Every row in the official Employees sheet, active and leavers together.',
+  exitRecords: 'Employees in the official dataset marked as Leaver. Exit survey responses are shown in the description when available.',
   leaverRate: 'Percentage of employees in this dataset marked as Leaver.',
   pulseEngagement: 'Average engagement score from the latest pulse survey wave.',
   newJoiner: 'Employees with tenure of six months or less.',

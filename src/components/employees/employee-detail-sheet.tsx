@@ -7,32 +7,17 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import { getEmployeeExitStatus } from '@/data/hr-data.constants'
 import { CHANNEL_CONSENT_NOTE } from '@/data/hr-care-demo'
 import type { EmployeeCareProfile } from '@/types/hr-automation'
-import type { Employee, ExitSurvey, OnboardingSurvey, PulseSurvey } from '@/types/hr-data'
+import type { Employee } from '@/types/hr-data'
 import {
   EMPTY_VALUE,
   formatDate,
-  formatScore,
-  formatRatioAsPercentage,
-  formatScoreOutOf,
 } from '@/utils/format'
 
 export type EmployeeLifecycle = {
   employee: Employee
-  onboarding: OnboardingSurvey[]
-  pulse: PulseSurvey[]
-  exit: ExitSurvey | null
   /** Present only when Step 9 demo care data covers this employee. */
   careProfile: EmployeeCareProfile | null
 }
@@ -56,7 +41,7 @@ type EmployeeDetailSheetProps = {
 export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetProps) {
   if (!lifecycle) return null
 
-  const { employee, onboarding, pulse, exit, careProfile } = lifecycle
+  const { employee, careProfile } = lifecycle
 
   const officialFields = [
     { key: 'id', label: 'Employee ID', value: employee.employeeId },
@@ -66,15 +51,7 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
     { key: 'join', label: 'Join date', value: formatDate(employee.joinDate) },
     { key: 'tenure', label: 'Tenure', value: employee.tenureMonths === null ? EMPTY_VALUE : `${employee.tenureMonths} months` },
     { key: 'status', label: 'Status', value: getEmployeeExitStatus(employee.exitStatus) ?? employee.exitStatus },
-    {
-      key: 'engagement',
-      label: 'Base engagement',
-      value: formatRatioAsPercentage(employee.baseEngagement),
-    },
     ...(employee.exitDate ? [{ key: 'exitDate', label: 'Exit date', value: formatDate(employee.exitDate) }] : []),
-    ...(employee.exitReason
-      ? [{ key: 'exitReason', label: 'Exit reason', value: employee.exitReason }]
-      : []),
   ]
 
   return (
@@ -87,7 +64,7 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
         <SheetHeader className="pr-12">
           <SheetTitle>{employee.employeeId}</SheetTitle>
           <SheetDescription id="employee-detail-description">
-            Read-only record from the official Employees sheet and its linked survey responses.
+            Read-only operational record from the official Employees sheet. Individual survey analytics are protected.
           </SheetDescription>
         </SheetHeader>
 
@@ -111,107 +88,15 @@ export function EmployeeDetailSheet({ lifecycle, onClose }: EmployeeDetailSheetP
 
           <Separator />
 
-          <section className="space-y-2">
+          <section className="space-y-2 rounded-lg border border-dashed p-3">
             <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Onboarding responses
+              Survey privacy
             </h3>
-            {onboarding.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No onboarding responses on record.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Date</TableHead>
-                    <TableHead scope="col">Overall</TableHead>
-                    <TableHead scope="col">Manager</TableHead>
-                    <TableHead scope="col">Role clarity</TableHead>
-                    <TableHead scope="col">Tools</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {onboarding.map((row) => (
-                    <TableRow key={`${row.employeeId}-${row.surveyDate}`}>
-                      <TableCell className="tabular-nums">{formatDate(row.surveyDate)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.overallScore, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.managerSupport, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.roleClarity, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.toolsAccess, 1)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            <p className="text-sm text-muted-foreground">
+              Individual survey scores, responses, comments, and inferred experience signals are
+              not displayed here. Group-level analytics are available in Insights.
+            </p>
           </section>
-
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Pulse survey waves
-            </h3>
-            {pulse.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pulse responses on record.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Wave</TableHead>
-                    <TableHead scope="col">Engagement</TableHead>
-                    <TableHead scope="col">Manager</TableHead>
-                    <TableHead scope="col">Workload</TableHead>
-                    <TableHead scope="col">Career</TableHead>
-                    <TableHead scope="col">Belonging</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pulse.map((row) => (
-                    <TableRow key={`${row.employeeId}-${row.surveyWave}`}>
-                      <TableCell className="whitespace-nowrap">{row.surveyWave}</TableCell>
-                      <TableCell className="tabular-nums">
-                        {formatScore(row.engagementScore, 1)}
-                      </TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.managerSupport, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.workload, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.careerGrowth, 1)}</TableCell>
-                      <TableCell className="tabular-nums">{formatScore(row.belonging, 1)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </section>
-
-          {exit ? (
-            <section className="space-y-2">
-              <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Exit survey
-              </h3>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-                {[
-                  { key: 'reason', label: 'Primary reason', value: exit.primaryExitReason },
-                  {
-                    key: 'overall',
-                    label: 'Overall experience',
-                    value: formatScoreOutOf(exit.overallExperience, SCORE_SCALE.max),
-                  },
-                  {
-                    key: 'manager',
-                    label: 'Manager support',
-                    value: formatScoreOutOf(exit.managerSupport, SCORE_SCALE.max),
-                  },
-                  {
-                    key: 'career',
-                    label: 'Career opportunity',
-                    value: formatScoreOutOf(exit.careerOpportunity, SCORE_SCALE.max),
-                  },
-                  { key: 'recommend', label: 'Would recommend', value: exit.wouldRecommend },
-                ].map((field) => (
-                  <div key={field.key} className="min-w-0 space-y-0.5">
-                    <dt className="text-xs text-muted-foreground">{field.label}</dt>
-                    <dd className="text-sm font-medium break-words tabular-nums">{field.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ) : null}
 
           {careProfile ? (
             <>

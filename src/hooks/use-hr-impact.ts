@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useHrActions } from '@/hooks/use-hr-actions'
 import { calculateActionImpacts } from '@/services/hr-impact.service'
 import type { ActionImpact, ImpactSummary } from '@/types/hr-impact'
+import type { HrAnalytics } from '@/types/hr-analytics'
 import type { HrAction, RecommendedAction } from '@/types/hr-actions'
 import type { HrIntelligenceItem } from '@/types/hr-intelligence'
 
@@ -31,6 +32,7 @@ type HrImpactState = {
    * computation and the approved-action state to a single copy.
    */
   demoActions: HrAction[]
+  analytics: HrAnalytics | null
   recommendations: RecommendedAction[]
   intelligenceItems: HrIntelligenceItem[]
   isLoading: boolean
@@ -83,6 +85,7 @@ export function useHrImpact(): HrImpactState {
     ),
     summary: result?.summary ?? EMPTY_SUMMARY,
     demoActions: activeActions,
+    analytics,
     recommendations,
     intelligenceItems,
     isLoading,

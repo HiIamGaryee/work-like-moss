@@ -102,9 +102,6 @@ export function EmployeesPage() {
     if (!data) return
     setSelected({
       employee,
-      onboarding: data.onboardingSurveys.filter((row) => row.employeeId === employee.employeeId),
-      pulse: data.pulseSurveys.filter((row) => row.employeeId === employee.employeeId),
-      exit: data.exitSurveys.find((row) => row.employeeId === employee.employeeId) ?? null,
       careProfile:
         demoCareProfiles.find((profile) => profile.employeeId === employee.employeeId) ?? null,
     })
@@ -116,12 +113,14 @@ export function EmployeesPage() {
   ]
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Employees"
-        description="Read-only directory of the official employee records behind every insight."
-        actions={<Badge variant="outline">Official Dataset</Badge>}
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Employees"
+          description="Read-only operational directory of the official employee records behind workforce signals."
+          actions={<Badge variant="outline">Official Dataset</Badge>}
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 

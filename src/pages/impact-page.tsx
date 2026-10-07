@@ -119,17 +119,19 @@ export function ImpactPage() {
   const shown = useMemo(() => impacts.filter(MATCHERS[tab]), [impacts, tab])
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Impact"
-        description="Track observable metric movement after completed HR actions without treating timing as proof of causation."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Official data only</Badge>
-            <InfoHint label="impact measurement rules" hint={IMPACT_RULES_NOTE} />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Impact"
+          description="Track delivery separately from observable outcome movement after completed HR actions."
+          actions={
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Official data only</Badge>
+              <InfoHint label="impact measurement rules" hint={IMPACT_RULES_NOTE} />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -141,7 +143,7 @@ export function ImpactPage() {
 
           <section className="space-y-4">
             <div className="min-w-0 space-y-1">
-              <h2 className="text-lg font-semibold tracking-tight">Action impact tracker</h2>
+              <h2 className="text-lg font-semibold tracking-tight">Delivery &amp; Outcome</h2>
               <p className="text-sm text-muted-foreground">
                 Actions awaiting a later reading first, followed by measured outcomes.
               </p>

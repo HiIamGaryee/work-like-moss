@@ -1,8 +1,13 @@
 import { ACTION_STATUS_LABELS, RECOMMENDATION_STATUS_LABELS } from '@/data/hr-action-catalog'
 import type {
+  ActionDelivery,
+  ActionDeliveryStatus,
   ActionExecutionStatus,
+  ActionHistoryEvent,
+  ActionHistoryEventType,
   ActionMetric,
   ActionMetricUnit,
+  ActionMeasurementType,
   HrAction,
   RecommendationReview,
   RecommendationReviewMap,
@@ -47,6 +52,13 @@ const isFiniteOrNull = (value: unknown): value is number | null =>
 const ACTION_STATUSES = Object.keys(ACTION_STATUS_LABELS) as ActionExecutionStatus[]
 const REVIEW_STATUSES = Object.keys(RECOMMENDATION_STATUS_LABELS) as RecommendedActionStatus[]
 const METRIC_UNITS: readonly ActionMetricUnit[] = ['score', 'percentage', 'count']
+const MEASUREMENT_TYPES: readonly ActionMeasurementType[] = ['numeric', 'qualitative']
+const DELIVERY_STATUSES: readonly ActionDeliveryStatus[] = [
+  'not-started', 'scheduled', 'in-progress', 'delivered', 'partially-delivered', 'cancelled',
+]
+const HISTORY_TYPES: readonly ActionHistoryEventType[] = [
+  'created', 'edited', 'approved', 'rejected', 'started', 'delivery-updated', 'completed', 'review-due',
+]
 const IMPACT_METRIC_KEYS: readonly ImpactMetricKey[] = [
   'pulse-engagement',
   'pulse-manager-support',
@@ -125,6 +137,38 @@ function parseMetric(value: unknown): ActionMetric | undefined {
   return { label: value.label, value: value.value, unit: value.unit as ActionMetricUnit }
 }
 
+function parseDelivery(value: unknown): ActionDelivery | undefined {
+  if (!isRecord(value) || !DELIVERY_STATUSES.includes(value.status as ActionDeliveryStatus)) return undefined
+  const intended = typeof value.intendedAudienceCount === 'number' && Number.isInteger(value.intendedAudienceCount) && value.intendedAudienceCount >= 0
+    ? value.intendedAudienceCount : undefined
+  const reached = typeof value.reachedAudienceCount === 'number' && Number.isInteger(value.reachedAudienceCount) && value.reachedAudienceCount >= 0
+    ? value.reachedAudienceCount : undefined
+  const coverage = typeof value.coveragePercentage === 'number' && Number.isFinite(value.coveragePercentage) && value.coveragePercentage >= 0 && value.coveragePercentage <= 100
+    ? value.coveragePercentage : undefined
+  return {
+    status: value.status as ActionDeliveryStatus,
+    ...(isText(value.deliveryDate) && isValidIsoDate(value.deliveryDate) ? { deliveryDate: value.deliveryDate } : {}),
+    ...(isText(value.affectedGroup) ? { affectedGroup: value.affectedGroup } : {}),
+    ...(intended !== undefined ? { intendedAudienceCount: intended } : {}),
+    ...(reached !== undefined ? { reachedAudienceCount: reached } : {}),
+    ...(coverage !== undefined ? { coveragePercentage: coverage } : {}),
+    ...(isText(value.deliveryNote) ? { deliveryNote: value.deliveryNote } : {}),
+  }
+}
+
+function parseHistory(value: unknown): ActionHistoryEvent[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || !isText(entry.timestamp) || !isText(entry.description) ||
+        !HISTORY_TYPES.includes(entry.type as ActionHistoryEventType)) return []
+    return [{
+      timestamp: entry.timestamp,
+      type: entry.type as ActionHistoryEventType,
+      description: entry.description,
+    }]
+  })
+}
+
 /** Every required field must be present and well-formed, or the record is dropped. */
 function parseAction(value: unknown): HrAction | null {
   if (!isRecord(value)) return null
@@ -183,6 +227,12 @@ function parseAction(value: unknown): HrAction | null {
     ...(targetMetric ? { targetMetric } : {}),
     ...(impactMetricKey ? { impactMetricKey } : {}),
     ...(impactScope ? { impactScope } : {}),
+    measurementType: MEASUREMENT_TYPES.includes(value.measurementType as ActionMeasurementType)
+      ? value.measurementType as ActionMeasurementType
+      : targetMetric?.value === null || targetMetric === undefined ? 'qualitative' : 'numeric',
+    ...(isText(value.noTargetReason) ? { noTargetReason: value.noTargetReason } : {}),
+    ...(parseDelivery(value.delivery) ? { delivery: parseDelivery(value.delivery) } : {}),
+    history: parseHistory(value.history),
     ...(isText(value.completedAt) ? { completedAt: value.completedAt } : {}),
     ...(isText(value.approvedAt) ? { approvedAt: value.approvedAt } : {}),
   }

@@ -1,10 +1,14 @@
 import { SearchX, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { RecommendedNextStep } from '@/components/actions/recommended-next-step'
 import { DatasetError } from '@/components/dataset-status'
 import { EmptyState } from '@/components/empty-state'
 import { EvidenceTrail } from '@/components/insights/evidence-trail'
 import { InsightAnalysisHeader } from '@/components/insights/insight-analysis-header'
+import { InvestigationAreas } from '@/components/insights/investigation-areas'
+import { AiDraftPanel } from '@/components/insights/ai-draft-panel'
+import { IssueEvidenceSection } from '@/components/insights/issue-evidence-section'
 import { LikelyDriverCard } from '@/components/insights/likely-driver-card'
 import { PriorityScoreCard } from '@/components/insights/priority-score-card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +16,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { CAUSATION_DISCLAIMER, NO_DRIVER_MESSAGE } from '@/data/hr-root-cause-rules'
 import { useHrImpact } from '@/hooks/use-hr-impact'
+import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
+import type { HrAiGenerationOptions } from '@/types/hr-ai'
+import {
+  buildHrAiDraftInput,
+  generateHrDraft,
+  getFallbackHrDraft,
+  isHrAiEnabled,
+} from '@/services/hr-ai-draft.service'
 
 function AnalysisSkeleton() {
   return (
@@ -62,7 +74,7 @@ function AnalysisSkeleton() {
  */
 export function InsightAnalysisPage() {
   const { insightId } = useParams<{ insightId: string }>()
-  const { intelligenceItems, recommendations, demoActions, impacts, isLoading, error, retry } =
+  const { analytics, intelligenceItems, recommendations, demoActions, impacts, isLoading, error, retry } =
     useHrImpact()
 
   const item = intelligenceItems.find((entry) => entry.insight.id === insightId) ?? null
@@ -70,6 +82,8 @@ export function InsightAnalysisPage() {
   const linkedAction =
     demoActions.find((action) => action.sourceRecommendationId === recommendation?.id) ?? null
   const linkedImpact = impacts.find((impact) => impact.actionId === linkedAction?.id) ?? null
+  const [aiState, setAiState] = useState<{ insightId: string; result: Awaited<ReturnType<typeof getFallbackHrDraft>> } | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   if (error) {
     return (
@@ -94,12 +108,12 @@ export function InsightAnalysisPage() {
           <CardContent className="space-y-4">
             <EmptyState
               icon={SearchX}
-              title="Insight not found"
+              title="Signal not found"
               description="This signal is not present in the current dataset."
             />
             <div className="flex justify-center">
               <Button variant="outline" size="sm" asChild>
-                <Link to="/insights">Back to Insights</Link>
+                <Link to="/insights">Back to Signals</Link>
               </Button>
             </div>
           </CardContent>
@@ -109,23 +123,58 @@ export function InsightAnalysisPage() {
   }
 
   const { insight, likelyDrivers, priority } = item
+  const privacySuppressed = isInsightDetailSuppressed(item, analytics)
+  const visibleDrivers = privacySuppressed ? [] : likelyDrivers
+  const aiInput = buildHrAiDraftInput(item, analytics, recommendation)
+  const aiEnabled = isHrAiEnabled()
+  const aiResult = aiState !== null && aiState.insightId === insightId
+    ? aiState.result
+    : privacySuppressed
+      ? { draft: null, source: 'rule-based' as const, available: false, message: 'Insufficient responses for AI-assisted analysis.' }
+      : getFallbackHrDraft(item, recommendation)
+
+  const handleGenerateAiDraft = async (options: HrAiGenerationOptions): Promise<void> => {
+    if (!aiInput || aiLoading) return
+    setAiLoading(true)
+    const result = await generateHrDraft(aiInput, item, recommendation, options)
+    setAiState({ insightId: insight.id, result })
+    setAiLoading(false)
+  }
 
   return (
     <div className="w-full space-y-6">
-      <InsightAnalysisHeader insight={insight} priority={priority} />
+      <InsightAnalysisHeader
+        insight={insight}
+        priority={priority}
+        privacySuppressed={privacySuppressed}
+      />
+
+      <IssueEvidenceSection item={item} analytics={analytics} drivers={visibleDrivers} />
+
+      <AiDraftPanel
+        draft={aiResult.draft}
+        source={aiResult.source}
+        message={aiResult.message}
+        loading={aiLoading}
+        canGenerate={aiInput !== null && aiEnabled}
+        onGenerate={handleGenerateAiDraft}
+        recommendation={privacySuppressed ? null : recommendation}
+        aiEnabled={aiEnabled}
+        evidenceSources={item.insight.dataSources}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Likely Drivers</CardTitle>
+              <CardTitle>Possible Explanation</CardTitle>
               <CardDescription>{CAUSATION_DISCLAIMER}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {likelyDrivers.length === 0 ? (
+              {visibleDrivers.length === 0 ? (
                 <EmptyState icon={Sparkles} title={NO_DRIVER_MESSAGE} />
               ) : (
-                likelyDrivers.map((driver, index) => (
+                visibleDrivers.map((driver, index) => (
                   <LikelyDriverCard key={driver.id} driver={driver} rank={index + 1} />
                 ))
               )}
@@ -133,10 +182,24 @@ export function InsightAnalysisPage() {
           </Card>
         </div>
 
-        <PriorityScoreCard priority={priority} />
+        {privacySuppressed ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Priority Assessment</CardTitle>
+              <CardDescription>Priority remains protected until the minimum response threshold is met.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Insufficient responses to display detailed priority evidence.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <PriorityScoreCard priority={priority} />
+        )}
       </div>
 
-      {recommendation ? (
+      <InvestigationAreas drivers={visibleDrivers} />
+
+      {recommendation && !privacySuppressed ? (
         <RecommendedNextStep
           recommendation={recommendation}
           action={linkedAction}
@@ -144,7 +207,17 @@ export function InsightAnalysisPage() {
         />
       ) : null}
 
-      <EvidenceTrail insight={insight} drivers={likelyDrivers} />
+      {privacySuppressed ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              The evidence trail is hidden until comparable group responses are available.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <EvidenceTrail insight={insight} drivers={visibleDrivers} />
+      )}
     </div>
   )
 }

@@ -18,6 +18,7 @@ import {
 import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import type { PulseTrendPoint, ScoreInterpretation } from '@/types/hr-analytics'
 import { formatScore, formatScoreOutOf } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type PulseTrendChartProps = {
   trend: PulseTrendPoint[]
@@ -49,6 +50,10 @@ const WORKLOAD_HINTS: Record<ScoreInterpretation['direction'], string> = {
 
 export function PulseTrendChart({ trend, latest, workload }: PulseTrendChartProps) {
   const hasData = trend.some((point) => point.responseCount > 0)
+  const safeTrend = trend.map((point) =>
+    canShowGroupDetail(point.responseCount) ? point : { ...point, engagement: null },
+  )
+  const latestIsSafe = canShowGroupDetail(latest?.responseCount)
 
   return (
     <Card className="min-w-0">
@@ -65,7 +70,7 @@ export function PulseTrendChart({ trend, latest, workload }: PulseTrendChartProp
           >
             <LineChart
               accessibilityLayer
-              data={trend}
+              data={safeTrend}
               margin={{ top: 8, right: 8, bottom: 0, left: -12 }}
             >
               <title>Pulse engagement by survey wave</title>
@@ -98,9 +103,9 @@ export function PulseTrendChart({ trend, latest, workload }: PulseTrendChartProp
                   <ChartTooltipContent
                     labelKey="wave"
                     formatter={(value) => (
-                      <span className="tabular-nums">
-                        Engagement {formatScoreOutOf(Number(value), SCORE_SCALE.max)}
-                      </span>
+                    <span className="tabular-nums">
+                      {latestIsSafe ? `Engagement ${formatScoreOutOf(Number(value), SCORE_SCALE.max)}` : PRIVACY_SUPPRESSED_MESSAGE}
+                    </span>
                     )}
                   />
                 }
@@ -127,7 +132,7 @@ export function PulseTrendChart({ trend, latest, workload }: PulseTrendChartProp
             <p className="text-xs text-muted-foreground">
               Latest wave · {latest.wave} · {latest.responseCount.toLocaleString()} responses
             </p>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+            {latestIsSafe ? <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               {SUPPORTING_SCORES.map(({ key, label }) => (
                 <div key={key} className="space-y-0.5">
                   <dt className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -144,7 +149,7 @@ export function PulseTrendChart({ trend, latest, workload }: PulseTrendChartProp
                   </dd>
                 </div>
               ))}
-            </dl>
+            </dl> : <p className="text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p>}
           </div>
         ) : null}
       </CardContent>

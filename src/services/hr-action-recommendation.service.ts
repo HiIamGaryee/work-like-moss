@@ -17,7 +17,9 @@ import { EVIDENCE_STRENGTH_LABELS, NO_DRIVER_MESSAGE } from '@/data/hr-root-caus
 import type { PriorityIssue, PrioritySource } from '@/types/hr-analytics'
 import type {
   ActionAssignmentDraft,
+  ActionDeliveryDraft,
   ActionExecutionStatus,
+  ActionHistoryEvent,
   ActionMetric,
   ActionReviewDraft,
   HrAction,
@@ -364,6 +366,12 @@ const parseTargetValue = (raw: string): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+const actionHistoryEvent = (
+  timestamp: string,
+  type: ActionHistoryEvent['type'],
+  description: string,
+): ActionHistoryEvent => ({ timestamp, type, description })
+
 /** Any change to a suggested value earns the "Edited by HR" badge. */
 function isEditedByHr(
   recommendation: RecommendedAction,
@@ -374,7 +382,9 @@ function isEditedByHr(
     draft.description.trim() !== recommendation.description ||
     draft.owner !== recommendation.suggestedOwner ||
     draft.successMeasure.trim() !== recommendation.successMeasure ||
-    parseTargetValue(draft.targetValue) !== recommendation.suggestedTarget.value
+    parseTargetValue(draft.targetValue) !== recommendation.suggestedTarget.value ||
+    draft.measurementType !== (recommendation.impactMetricKey ? 'numeric' : 'qualitative') ||
+    draft.noTargetReason.trim() !== ''
   )
 }
 
@@ -413,6 +423,9 @@ export function createActionFromReview(
 
     successMeasure: draft.successMeasure.trim(),
 
+    measurementType: draft.measurementType,
+    ...(draft.noTargetReason.trim() ? { noTargetReason: draft.noTargetReason.trim() } : {}),
+
     baselineMetric: recommendation.baselineMetric,
     targetMetric: { ...recommendation.suggestedTarget, value: parseTargetValue(draft.targetValue) },
 
@@ -426,6 +439,14 @@ export function createActionFromReview(
     createdAt: now,
     updatedAt: now,
     approvedAt: now,
+    delivery: { status: 'not-started', affectedGroup: recommendation.affectedScope },
+    history: [
+      actionHistoryEvent(now, 'created', 'Action record created from an approved recommendation.'),
+      ...(isEditedByHr(recommendation, draft)
+        ? [actionHistoryEvent(now, 'edited', 'Recommendation edited by HR before approval.')]
+        : []),
+      actionHistoryEvent(now, 'approved', 'Recommendation approved by HR.'),
+    ],
   }
 }
 
@@ -449,7 +470,14 @@ export function applyActionAssignment(
       owner.length === 0 || !isValidIsoDate(draft.dueDate) ||
       isBefore(draft.dueDate, action.startDate)) return action
   if (owner === action.owner && draft.dueDate === action.dueDate) return action
-  return { ...action, owner, dueDate: draft.dueDate, editedByHr: true, updatedAt: now }
+  return {
+    ...action,
+    owner,
+    dueDate: draft.dueDate,
+    editedByHr: true,
+    updatedAt: now,
+    history: [...action.history, actionHistoryEvent(now, 'edited', 'Owner or due date updated by HR.')],
+  }
 }
 
 /**
@@ -468,6 +496,52 @@ export function applyActionStatus(
     ...action,
     status,
     updatedAt: now,
+    history: [
+      ...action.history,
+      actionHistoryEvent(
+        now,
+        status === 'in-progress' ? 'started' : status === 'completed' ? 'completed' : 'edited',
+        status === 'in-progress'
+          ? 'Action marked in progress.'
+          : status === 'completed'
+            ? 'Action marked completed. Outcome remains separate.'
+            : 'Action cancelled.',
+      ),
+    ],
     ...(status === 'completed' ? { completedAt: action.completedAt ?? now } : {}),
+  }
+}
+
+const isValidCount = (value: number | undefined): boolean =>
+  value === undefined || (Number.isInteger(value) && value >= 0)
+
+export function applyActionDelivery(
+  action: HrAction,
+  draft: ActionDeliveryDraft,
+  now: string,
+): HrAction {
+  if (action.status === 'cancelled') return action
+  if (!draft.affectedGroup?.trim() && draft.status !== 'not-started' && draft.status !== 'cancelled') return action
+  if (draft.status === 'delivered' || draft.status === 'partially-delivered') {
+    if (!draft.deliveryDate || !isValidIsoDate(draft.deliveryDate)) return action
+  }
+  if (!isValidCount(draft.intendedAudienceCount) || !isValidCount(draft.reachedAudienceCount)) return action
+  if (draft.intendedAudienceCount !== undefined && draft.reachedAudienceCount !== undefined &&
+      draft.reachedAudienceCount > draft.intendedAudienceCount) return action
+
+  const coveragePercentage = draft.intendedAudienceCount && draft.intendedAudienceCount > 0 && draft.reachedAudienceCount !== undefined
+    ? Math.round((draft.reachedAudienceCount / draft.intendedAudienceCount) * 1000) / 10
+    : undefined
+  const delivery = {
+    ...draft,
+    affectedGroup: draft.affectedGroup?.trim() || undefined,
+    deliveryNote: draft.deliveryNote?.trim() || undefined,
+    ...(coveragePercentage !== undefined ? { coveragePercentage } : {}),
+  }
+  return {
+    ...action,
+    delivery,
+    updatedAt: now,
+    history: [...action.history, actionHistoryEvent(now, 'delivery-updated', `Delivery status updated to ${draft.status}.`)],
   }
 }

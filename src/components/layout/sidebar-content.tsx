@@ -10,7 +10,7 @@ type SidebarContentProps = {
 export function SidebarContent({ onNavigate }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2.5 px-4 py-4">
+      <div className="flex items-center gap-2.5 border-b bg-card px-4 py-4">
         <div
           aria-hidden="true"
           className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground"
@@ -22,8 +22,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           <p className="truncate text-xs text-muted-foreground">People Intelligence</p>
         </div>
       </div>
-
-      <Separator />
 
       <nav aria-label="Main navigation" className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">

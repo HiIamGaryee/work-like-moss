@@ -28,6 +28,7 @@ import { PRIORITY_LEVEL_LABELS } from '@/data/hr-priority-rules'
 import { useHrActions } from '@/hooks/use-hr-actions'
 import type {
   ActionAssignmentDraft,
+  ActionDeliveryDraft,
   ActionExecutionStatus,
   HrAction,
   RecommendedAction,
@@ -35,6 +36,7 @@ import type {
 import { todayIsoDate } from '@/utils/date'
 import { formatCount } from '@/utils/format'
 import { isActionOverdue } from '@/utils/hr-action-view'
+import { isGroupScopeSuppressed } from '@/utils/insight-privacy'
 
 /* ------------------------------------------------------------------ filters */
 
@@ -135,6 +137,7 @@ function ActionsSkeleton() {
  */
 export function ActionsPage() {
   const {
+    analytics,
     recommendations,
     activeActions,
     officialActions,
@@ -146,6 +149,7 @@ export function ActionsPage() {
     rejectRecommendation,
     updateAction,
     updateActionAssignment,
+    updateActionDelivery,
     resetDemo,
   } = useHrActions()
 
@@ -160,6 +164,7 @@ export function ActionsPage() {
   const today = todayIsoDate()
   const focusId = searchParams.get('recommendation')
   const focusIssueId = searchParams.get('issue')
+  const focusActionId = searchParams.get('action')
 
   /**
    * `/actions?recommendation=<id>` arrives from an insight's "Recommended Next
@@ -167,7 +172,24 @@ export function ActionsPage() {
    * never opens a review panel for something already approved.
    */
   useEffect(() => {
-    if ((!focusId && !focusIssueId) || isLoading) return
+    if ((!focusId && !focusIssueId && !focusActionId) || isLoading) return
+
+    if (focusActionId) {
+      const action = activeActions.find((entry) => entry.id === focusActionId)
+      if (action) {
+        setTab(action.status === 'completed' || action.status === 'cancelled' ? 'completed' : 'active')
+        setDetailAction(action)
+      }
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current)
+          next.delete('action')
+          return next
+        },
+        { replace: true },
+      )
+      return
+    }
 
     const recommendation = recommendations.find((entry) =>
       focusIssueId ? entry.issueId === focusIssueId : entry.id === focusId,
@@ -185,6 +207,8 @@ export function ActionsPage() {
       } else if (recommendation.reviewStatus === 'rejected') {
         setTab('recommendations')
         setReviewFilter('rejected')
+      } else if (isGroupScopeSuppressed(recommendation.impactScope, recommendation.evidenceSources, analytics)) {
+        setTab('recommendations')
       } else {
         setTab('recommendations')
         setReviewing(recommendation)
@@ -197,11 +221,12 @@ export function ActionsPage() {
         const next = new URLSearchParams(current)
         next.delete('recommendation')
         next.delete('issue')
+        next.delete('action')
         return next
       },
       { replace: true },
     )
-  }, [focusId, focusIssueId, isLoading, recommendations, activeActions, setSearchParams])
+  }, [focusId, focusIssueId, focusActionId, isLoading, recommendations, activeActions, analytics, setSearchParams])
 
   const shownRecommendations = useMemo(
     () =>
@@ -253,16 +278,67 @@ export function ActionsPage() {
   ).length
 
   const handleStatusChange = (actionId: string, status: ActionExecutionStatus): void => {
+    const now = new Date().toISOString()
     updateAction(actionId, status)
     setDetailAction((current) =>
-      current && current.id === actionId ? { ...current, status } : current,
+      current && current.id === actionId
+        ? {
+            ...current,
+            status,
+            updatedAt: now,
+            history: [
+              ...current.history,
+              {
+                timestamp: now,
+                type: status === 'in-progress' ? 'started' : status === 'completed' ? 'completed' : 'edited',
+                description: status === 'in-progress'
+                  ? 'Action marked in progress.'
+                  : status === 'completed'
+                    ? 'Action marked completed. Outcome remains separate.'
+                    : 'Action cancelled.',
+              },
+            ],
+          }
+        : current,
     )
   }
 
   const handleAssignmentChange = (actionId: string, draft: ActionAssignmentDraft): void => {
+    const now = new Date().toISOString()
     updateActionAssignment(actionId, draft)
     setDetailAction((current) => current && current.id === actionId
-      ? { ...current, owner: draft.owner.trim(), dueDate: draft.dueDate, editedByHr: true }
+      ? {
+          ...current,
+          owner: draft.owner.trim(),
+          dueDate: draft.dueDate,
+          editedByHr: true,
+          updatedAt: now,
+          history: [...current.history, { timestamp: now, type: 'edited', description: 'Owner or due date updated by HR.' }],
+        }
+      : current)
+  }
+
+  const handleDeliveryChange = (actionId: string, draft: ActionDeliveryDraft): void => {
+    const now = new Date().toISOString()
+    updateActionDelivery(actionId, draft)
+    setDetailAction((current) => current && current.id === actionId
+      ? {
+          ...current,
+          delivery: {
+            ...draft,
+            affectedGroup: draft.affectedGroup?.trim() || undefined,
+            deliveryNote: draft.deliveryNote?.trim() || undefined,
+            coveragePercentage: draft.intendedAudienceCount && draft.reachedAudienceCount !== undefined
+              ? Math.round((draft.reachedAudienceCount / draft.intendedAudienceCount) * 1000) / 10
+              : undefined,
+          },
+          updatedAt: now,
+          history: [...current.history, {
+            timestamp: now,
+            type: 'delivery-updated',
+            description: `Delivery status updated to ${draft.status}.`,
+          }],
+        }
       : current)
   }
 
@@ -276,24 +352,26 @@ export function ActionsPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Actions"
-        description="Turn workforce insights into accountable interventions with clear ownership and measurable outcomes."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Human approval required</Badge>
-            <InfoHint label="action recommendation rules" hint={ACTION_RULES_NOTE} />
-            <ResetDemoMenu
-              label="Reset demo"
-              menuAriaLabel="Action Centre options"
-              confirmTitle="Reset demo actions?"
-              confirmDescription="This will remove locally approved and rejected recommendations. Official dataset actions will not be changed."
-              onReset={handleReset}
-            />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Actions"
+          description="Turn workforce insights into accountable interventions with clear ownership and measurable outcomes."
+          actions={
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Human approval required</Badge>
+              <InfoHint label="action recommendation rules" hint={ACTION_RULES_NOTE} />
+              <ResetDemoMenu
+                label="Reset demo"
+                menuAriaLabel="Action Centre options"
+                confirmTitle="Reset demo actions?"
+                confirmDescription="This will remove locally approved and rejected recommendations. Official dataset actions will not be changed."
+                onReset={handleReset}
+              />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -301,23 +379,44 @@ export function ActionsPage() {
 
       {!isLoading && !error ? (
         <div className="space-y-6">
-          <ActionSummary recommendations={recommendations} activeActions={activeActions} />
+          <section className="space-y-4" aria-labelledby="action-overview-title">
+            <div className="space-y-1">
+              <h2 id="action-overview-title" className="text-lg font-semibold tracking-tight">Action Overview</h2>
+              <p className="text-sm text-muted-foreground">Monitor recommendation review and approved action progress.</p>
+            </div>
+            <ActionSummary recommendations={recommendations} activeActions={activeActions} />
+          </section>
 
-          <Tabs value={tab} onValueChange={(value) => setTab(value as ActionTabKey)}>
-            <TabsList className="w-full justify-start overflow-x-auto">
-              {ACTION_TABS.map((entry) => (
-                <TabsTrigger key={entry.key} value={entry.key}>
-                  {entry.label}
-                  {entry.key === 'recommendations' && pendingCount > 0
-                    ? ` · ${formatCount(pendingCount)}`
-                    : ''}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          <section className="space-y-5 border-t pt-7" aria-labelledby="action-workspace-title">
+            <div className="space-y-1">
+              <h2 id="action-workspace-title" className="text-lg font-semibold tracking-tight">Action Workspace</h2>
+              <p className="text-sm text-muted-foreground">Review system recommendations and manage approved interventions.</p>
+            </div>
 
-            <TabsContent value="recommendations" className="space-y-4 pt-2">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">{ACTION_TABS[0].description}</p>
+            <Tabs value={tab} onValueChange={(value) => setTab(value as ActionTabKey)}>
+              <div className="rounded-lg border bg-muted/50 p-1">
+                <TabsList className="w-full justify-start overflow-x-auto bg-transparent p-0">
+                  {ACTION_TABS.map((entry) => (
+                    <TabsTrigger
+                      key={entry.key}
+                      value={entry.key}
+                      className="data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-semibold data-[state=active]:shadow-sm"
+                    >
+                      {entry.label}
+                      {entry.key === 'recommendations' && pendingCount > 0
+                        ? ` · ${formatCount(pendingCount)}`
+                        : ''}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="recommendations" className="space-y-5 pt-2">
+                <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Suggested Actions · {formatCount(shownRecommendations.length)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[0].description}</p>
+                  </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Select
                     value={reviewFilter}
@@ -350,7 +449,7 @@ export function ActionsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+                </div>
 
               {shownRecommendations.length === 0 ? (
                 <Card>
@@ -363,21 +462,25 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {shownRecommendations.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.id}
                       recommendation={recommendation}
                       onReview={setReviewing}
+                      privacySuppressed={isGroupScopeSuppressed(recommendation.impactScope, recommendation.evidenceSources, analytics)}
                     />
                   ))}
                 </div>
               )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="active" className="space-y-4 pt-2">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">{ACTION_TABS[1].description}</p>
+              <TabsContent value="active" className="space-y-5 pt-2">
+                <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Active Actions · {formatCount(shownActions.length)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[1].description}</p>
+                  </div>
                 <Select
                   value={statusFilter}
                   onValueChange={(value) => setStatusFilter(value as StatusFilterKey)}
@@ -393,7 +496,7 @@ export function ActionsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+                </div>
 
               {shownActions.length === 0 ? (
                 <Card>
@@ -406,7 +509,7 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {shownActions.map((action) => (
                     <ActiveActionCard
                       key={action.id}
@@ -414,14 +517,18 @@ export function ActionsPage() {
                       today={today}
                       onStatusChange={handleStatusChange}
                       onOpenDetail={setDetailAction}
+                      privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                     />
                   ))}
                 </div>
               )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="completed" className="space-y-4 pt-2">
-              <p className="text-sm text-muted-foreground">{ACTION_TABS[2].description}</p>
+              <TabsContent value="completed" className="space-y-5 pt-2">
+                <div className="border-b pb-4">
+                  <p className="text-sm font-medium">Completed Actions · {formatCount(completedActions.length)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[2].description}</p>
+                </div>
               {completedActions.length === 0 ? (
                 <Card>
                   <CardContent>
@@ -433,7 +540,7 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {completedActions.map((action) => (
                     <ActiveActionCard
                       key={action.id}
@@ -441,6 +548,7 @@ export function ActionsPage() {
                       today={today}
                       onStatusChange={handleStatusChange}
                       onOpenDetail={setDetailAction}
+                      privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                     />
                   ))}
                 </div>
@@ -448,7 +556,7 @@ export function ActionsPage() {
               {cancelledActions.length > 0 ? (
                 <section className="space-y-3 border-t pt-4">
                   <h3 className="text-sm font-medium">Cancelled action history</h3>
-                  <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-5">
                     {cancelledActions.map((action) => (
                       <ActiveActionCard
                         key={action.id}
@@ -456,14 +564,15 @@ export function ActionsPage() {
                         today={today}
                         onStatusChange={handleStatusChange}
                         onOpenDetail={setDetailAction}
+                        privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                       />
                     ))}
                   </div>
                 </section>
               ) : null}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="existing" className="pt-2">
+              <TabsContent value="existing" className="pt-2">
               <Card className="min-w-0">
                 <CardHeader>
                   <div className="flex flex-wrap items-center gap-2">
@@ -481,8 +590,9 @@ export function ActionsPage() {
                   <ExistingActionsTable actions={officialActions} />
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+            </Tabs>
+          </section>
 
           <p className="text-xs text-muted-foreground">
             {storageAvailable
@@ -505,6 +615,8 @@ export function ActionsPage() {
         today={today}
         onClose={() => setDetailAction(null)}
         onUpdateAssignment={handleAssignmentChange}
+        onUpdateDelivery={handleDeliveryChange}
+        privacySuppressed={detailAction ? isGroupScopeSuppressed(detailAction.impactScope, detailAction.evidenceSources ?? [], analytics) : false}
       />
     </div>
   )

@@ -9,22 +9,39 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import type { ActionAssignmentDraft, HrAction } from '@/types/hr-actions'
+import { Textarea } from '@/components/ui/textarea'
+import { ACTION_DELIVERY_STATUS_LABELS } from '@/data/hr-action-catalog'
+import type {
+  ActionAssignmentDraft,
+  ActionDeliveryDraft,
+  ActionDeliveryStatus,
+  HrAction,
+} from '@/types/hr-actions'
 import { isBefore, isValidIsoDate } from '@/utils/date'
 import { EMPTY_VALUE, formatDate } from '@/utils/format'
 import { formatActionMetric, formatDueWindow, isActionOverdue } from '@/utils/hr-action-view'
+import { PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type ActionDetailSheetProps = {
   action: HrAction | null
   today: string
   onClose: () => void
   onUpdateAssignment: (actionId: string, draft: ActionAssignmentDraft) => void
+  onUpdateDelivery: (actionId: string, draft: ActionDeliveryDraft) => void
+  privacySuppressed?: boolean
 }
 
 function AssignmentEditor({
@@ -79,12 +96,137 @@ function AssignmentEditor({
   )
 }
 
+const DELIVERY_STATUSES = Object.entries(ACTION_DELIVERY_STATUS_LABELS) as [ActionDeliveryStatus, string][]
+
+function DeliveryEditor({
+  action,
+  onSave,
+}: {
+  action: HrAction
+  onSave: (actionId: string, draft: ActionDeliveryDraft) => void
+}) {
+  const current = action.delivery
+  const [status, setStatus] = useState<ActionDeliveryStatus>(current?.status ?? 'not-started')
+  const [deliveryDate, setDeliveryDate] = useState(current?.deliveryDate ?? '')
+  const [affectedGroup, setAffectedGroup] = useState(current?.affectedGroup ?? action.affectedScope)
+  const [intended, setIntended] = useState(current?.intendedAudienceCount?.toString() ?? '')
+  const [reached, setReached] = useState(current?.reachedAudienceCount?.toString() ?? '')
+  const [deliveryNote, setDeliveryNote] = useState(current?.deliveryNote ?? '')
+
+  const intendedCount = intended.trim() === '' ? undefined : Number(intended)
+  const reachedCount = reached.trim() === '' ? undefined : Number(reached)
+  const validCount = (value: number | undefined): boolean =>
+    value === undefined || (Number.isInteger(value) && value >= 0)
+  const requiresGroup = status !== 'not-started' && status !== 'cancelled'
+  const requiresDate = status === 'delivered' || status === 'partially-delivered'
+  const valid = (!requiresGroup || affectedGroup.trim() !== '') &&
+    (!requiresDate || isValidIsoDate(deliveryDate)) &&
+    validCount(intendedCount) && validCount(reachedCount) &&
+    (intendedCount === undefined || reachedCount === undefined || reachedCount <= intendedCount)
+
+  return (
+    <section className="space-y-3 border-t pt-4">
+      <div>
+        <h3 className="text-sm font-medium">Delivery</h3>
+        <p className="text-xs text-muted-foreground">
+          Confirm whether the intervention reached the intended group. Delivery does not establish
+          that the employee signal improved.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`delivery-status-${action.id}`}>Status</Label>
+        <Select value={status} onValueChange={(value) => setStatus(value as ActionDeliveryStatus)}>
+          <SelectTrigger id={`delivery-status-${action.id}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DELIVERY_STATUSES.map(([key, label]) => (
+              <SelectItem key={key} value={key}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor={`delivery-date-${action.id}`}>Delivered on</Label>
+          <Input
+            id={`delivery-date-${action.id}`}
+            type="date"
+            value={deliveryDate}
+            onChange={(event) => setDeliveryDate(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`delivery-group-${action.id}`}>Affected group</Label>
+          <Input
+            id={`delivery-group-${action.id}`}
+            value={affectedGroup}
+            onChange={(event) => setAffectedGroup(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`delivery-intended-${action.id}`}>Intended audience</Label>
+          <Input
+            id={`delivery-intended-${action.id}`}
+            type="number"
+            min="0"
+            step="1"
+            value={intended}
+            onChange={(event) => setIntended(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`delivery-reached-${action.id}`}>Reached audience</Label>
+          <Input
+            id={`delivery-reached-${action.id}`}
+            type="number"
+            min="0"
+            step="1"
+            value={reached}
+            onChange={(event) => setReached(event.target.value)}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`delivery-note-${action.id}`}>Delivery note</Label>
+        <Textarea
+          id={`delivery-note-${action.id}`}
+          rows={2}
+          value={deliveryNote}
+          onChange={(event) => setDeliveryNote(event.target.value)}
+          placeholder="Optional group-level delivery note"
+        />
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!valid}
+        onClick={() => onSave(action.id, {
+          status,
+          deliveryDate: deliveryDate || undefined,
+          affectedGroup: affectedGroup.trim() || undefined,
+          intendedAudienceCount: intendedCount,
+          reachedAudienceCount: reachedCount,
+          deliveryNote: deliveryNote.trim() || undefined,
+        })}
+      >
+        Save delivery
+      </Button>
+      {!valid ? (
+        <p className="text-xs text-muted-foreground">
+          Delivered or partially delivered actions need a date and affected group. Reached cannot exceed intended.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 /**
  * Detail and assignment editing for one approved action. Completion means the
  * activity was performed — never that the workforce outcome improved.
  */
 export function ActionDetailSheet({
-  action, today, onClose, onUpdateAssignment,
+  action, today, onClose, onUpdateAssignment, onUpdateDelivery, privacySuppressed = false,
 }: ActionDetailSheetProps) {
   if (!action) return null
 
@@ -95,12 +237,13 @@ export function ActionDetailSheet({
     { key: 'start', label: 'Start date', value: formatDate(action.startDate) },
     { key: 'due', label: 'Due date', value: formatDate(action.dueDate) },
     { key: 'window', label: 'Timeline', value: formatDueWindow(action, today) },
-    {
+    ...(privacySuppressed ? [{ key: 'privacy', label: 'Measurement detail', value: PRIVACY_SUPPRESSED_MESSAGE }] : [{
       key: 'baseline',
       label: `Baseline · ${action.baselineMetric?.label ?? 'measure'}`,
       value: formatActionMetric(action.baselineMetric),
-    },
-    { key: 'target', label: 'Target', value: formatActionMetric(action.targetMetric) },
+    }, { key: 'target', label: 'Target', value: formatActionMetric(action.targetMetric) }]),
+    { key: 'measurement', label: 'Measurement type', value: action.measurementType === 'numeric' ? 'Numeric target' : 'Qualitative / diagnostic' },
+    ...(action.noTargetReason ? [{ key: 'targetReason', label: 'No-target reason', value: action.noTargetReason }] : []),
     { key: 'created', label: 'Approved on', value: formatDate((action.approvedAt ?? action.createdAt).slice(0, 10)) },
     {
       key: 'completed',
@@ -122,10 +265,13 @@ export function ActionDetailSheet({
             {action.priorityLevelAtCreation ? (
               <PriorityBadge
                 level={action.priorityLevelAtCreation}
-                score={action.priorityScoreAtCreation}
+                score={privacySuppressed ? undefined : action.priorityScoreAtCreation}
               />
             ) : null}
             {action.editedByHr ? <Badge variant="outline">Edited by HR</Badge> : null}
+            {action.delivery ? (
+              <Badge variant="outline">Delivery: {ACTION_DELIVERY_STATUS_LABELS[action.delivery.status]}</Badge>
+            ) : null}
           </div>
           <SheetTitle className="break-words">{action.title}</SheetTitle>
           <SheetDescription id="detail-description">
@@ -157,7 +303,13 @@ export function ActionDetailSheet({
             />
           ) : null}
 
-          {action.evidenceSources?.length ? (
+          <DeliveryEditor
+            key={`${action.id}-${action.updatedAt}`}
+            action={action}
+            onSave={onUpdateDelivery}
+          />
+
+          {action.evidenceSources?.length && !privacySuppressed ? (
             <div className="flex flex-wrap gap-1.5">
               {action.evidenceSources.map((source) => (
                 <Badge key={source} variant="outline">{source}</Badge>
@@ -175,6 +327,47 @@ export function ActionDetailSheet({
               assessed separately when comparable evidence becomes available.
             </p>
           </section>
+
+          <section className="space-y-2 border-t pt-4">
+            <h3 className="text-sm font-medium">Outcome</h3>
+            <p className="text-sm text-muted-foreground">
+              Delivery confirms implementation only. Outcome success is assessed separately from
+              comparable follow-up evidence.
+            </p>
+            <p className="text-sm font-medium">
+              Outcome status:{' '}
+              {!action.impactMetricKey
+                ? 'Not configured'
+                : action.status === 'completed'
+                  ? 'Awaiting comparable follow-up'
+                  : 'Awaiting action completion'}
+            </p>
+            {action.impactMetricKey ? (
+              <Link
+                to={`/impact?action=${action.id}`}
+                className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-muted-foreground"
+              >
+                View outcome measurement
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">Outcome measurement is not configured for this action.</p>
+            )}
+          </section>
+
+          {action.history.length > 0 ? (
+            <section className="space-y-2 border-t pt-4">
+              <h3 className="text-sm font-medium">Action history</h3>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                {[...action.history].reverse().map((event, index) => (
+                  <li key={`${event.timestamp}-${event.type}-${index}`}>
+                    <span className="font-medium text-foreground">{event.description}</span>
+                    <span> · {formatDate(event.timestamp.slice(0, 10))}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {action.insightId ? (

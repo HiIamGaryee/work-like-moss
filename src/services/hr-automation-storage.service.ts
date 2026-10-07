@@ -1,4 +1,4 @@
-import type { AutomationMessage } from '@/types/hr-automation'
+import type { AutomationMessage, FollowUpStatus } from '@/types/hr-automation'
 
 /**
  * Local persistence for automation demo state only.
@@ -23,9 +23,15 @@ export interface AutomationDemoState {
   handledIds: string[]
   /** Reviewer edits to a suggested message, keyed by reminder id. */
   messageEdits: Record<string, AutomationMessage>
+  /** Completion state for derived follow-ups, kept with the existing reminder state. */
+  followUpStates: Record<string, FollowUpStatus>
 }
 
-export const EMPTY_AUTOMATION_STATE: AutomationDemoState = { handledIds: [], messageEdits: {} }
+export const EMPTY_AUTOMATION_STATE: AutomationDemoState = {
+  handledIds: [],
+  messageEdits: {},
+  followUpStates: {},
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -39,6 +45,8 @@ function parseMessage(value: unknown): AutomationMessage | null {
     ...(isText(value.subject) ? { subject: value.subject } : {}),
   }
 }
+
+const FOLLOW_UP_STATUSES = new Set<FollowUpStatus>(['open', 'in-progress', 'completed', 'dismissed'])
 
 /** `false` means the write did not happen — the caller keeps in-memory state. */
 export function isAutomationStorageAvailable(): boolean {
@@ -79,7 +87,19 @@ export function loadAutomationState(): AutomationDemoState {
       )
     : {}
 
-  return { handledIds, messageEdits }
+  const followUpStates = isRecord(parsed.followUpStates)
+    ? Object.entries(parsed.followUpStates).reduce<Record<string, FollowUpStatus>>(
+        (states, [id, value]) => {
+          if (isText(id) && FOLLOW_UP_STATUSES.has(value as FollowUpStatus)) {
+            states[id] = value as FollowUpStatus
+          }
+          return states
+        },
+        {},
+      )
+    : {}
+
+  return { handledIds, messageEdits, followUpStates }
 }
 
 export function saveAutomationState(state: AutomationDemoState): boolean {
