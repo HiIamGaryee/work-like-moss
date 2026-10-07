@@ -16,9 +16,9 @@ export type NavigationItem = {
 
 export const navigationItems: NavigationItem[] = [
   { label: 'Overview', href: '/', icon: LayoutDashboard },
-  { label: 'Insights', href: '/insights', icon: Sparkles },
+  { label: 'Signals', href: '/insights', icon: Sparkles },
   { label: 'Employees', href: '/employees', icon: Users },
   { label: 'Actions', href: '/actions', icon: ListChecks },
-  { label: 'Automations', href: '/automations', icon: Workflow },
+  { label: 'Follow-Up', href: '/automations', icon: Workflow },
   { label: 'Impact', href: '/impact', icon: ChartNoAxesCombined },
 ]

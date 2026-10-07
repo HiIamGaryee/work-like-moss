@@ -34,6 +34,42 @@ export type RecommendedActionStatus = 'pending-review' | 'approved' | 'rejected'
 
 export type ActionExecutionStatus = 'planned' | 'in-progress' | 'completed' | 'cancelled'
 
+export type ActionMeasurementType = 'numeric' | 'qualitative'
+
+export type ActionDeliveryStatus =
+  | 'not-started'
+  | 'scheduled'
+  | 'in-progress'
+  | 'delivered'
+  | 'partially-delivered'
+  | 'cancelled'
+
+export interface ActionDelivery {
+  status: ActionDeliveryStatus
+  deliveryDate?: string
+  affectedGroup?: string
+  intendedAudienceCount?: number
+  reachedAudienceCount?: number
+  coveragePercentage?: number
+  deliveryNote?: string
+}
+
+export type ActionHistoryEventType =
+  | 'created'
+  | 'edited'
+  | 'approved'
+  | 'rejected'
+  | 'started'
+  | 'delivery-updated'
+  | 'completed'
+  | 'review-due'
+
+export interface ActionHistoryEvent {
+  timestamp: string
+  type: ActionHistoryEventType
+  description: string
+}
+
 export interface RecommendedAction {
   id: string
   insightId?: string
@@ -102,6 +138,9 @@ export interface HrAction {
 
   successMeasure: string
 
+  measurementType: ActionMeasurementType
+  noTargetReason?: string
+
   baselineMetric?: ActionMetric
   targetMetric?: ActionMetric
 
@@ -119,6 +158,9 @@ export interface HrAction {
   approvedAt?: string
   /** Set the first time the status becomes `completed`. */
   completedAt?: string
+
+  delivery?: ActionDelivery
+  history: ActionHistoryEvent[]
 }
 
 /** The editable form values in the HR review panel. Strings bind to inputs. */
@@ -130,12 +172,16 @@ export interface ActionReviewDraft {
   dueDate: string
   successMeasure: string
   targetValue: string
+  measurementType: ActionMeasurementType
+  noTargetReason: string
 }
 
 export interface ActionAssignmentDraft {
   owner: string
   dueDate: string
 }
+
+export type ActionDeliveryDraft = ActionDelivery
 
 /** What HR decided about one recommendation, persisted separately from actions. */
 export interface RecommendationReview {

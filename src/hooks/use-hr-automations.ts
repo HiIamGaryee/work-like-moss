@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { demoCareProfiles } from '@/data/hr-care-demo'
 import { useHrActions } from '@/hooks/use-hr-actions'
 import { generateHrAutomations } from '@/services/hr-automation.service'
+import { calculateActionImpacts } from '@/services/hr-impact.service'
 import {
   clearAutomationState,
   isAutomationStorageAvailable,
@@ -16,6 +17,8 @@ import type {
   AutomationMessage,
   AutomationSummary,
   AutomationTypeCap,
+  FollowUpStatus,
+  HrFollowUpItem,
   HrAutomationItem,
 } from '@/types/hr-automation'
 import { todayIsoDate } from '@/utils/date'
@@ -49,6 +52,7 @@ type HrAutomationsState = {
    * single computation and the approved-action state to a single copy.
    */
   analytics: HrAnalytics | null
+  intelligenceItems: HrIntelligenceItem[]
   topPriorityItems: HrIntelligenceItem[]
   recommendations: RecommendedAction[]
   todayIso: string
@@ -59,6 +63,9 @@ type HrAutomationsState = {
   markHandled: (automationId: string, handled?: boolean) => void
   saveMessageEdit: (automationId: string, message: AutomationMessage) => void
   resetAutomations: () => void
+  followUps: HrFollowUpItem[]
+  followUpSummary: { open: number; overdue: number; dueSoon: number; completed: number }
+  updateFollowUpStatus: (followUpId: string, status: FollowUpStatus) => void
 }
 
 /**
@@ -69,7 +76,17 @@ type HrAutomationsState = {
 const captureNow = (): Date => new Date()
 
 export function useHrAutomations(): HrAutomationsState {
-  const { data, analytics, activeActions, topPriorityItems, recommendations, isLoading, error, retry } =
+  const {
+    data,
+    analytics,
+    activeActions,
+    intelligenceItems,
+    topPriorityItems,
+    recommendations,
+    isLoading,
+    error,
+    retry,
+  } =
     useHrActions()
   const [now] = useState(captureNow)
   const [state, setState] = useState<AutomationDemoState>(loadAutomationState)
@@ -104,6 +121,135 @@ export function useHrAutomations(): HrAutomationsState {
     [automations],
   )
 
+  const impactResult = useMemo(
+    () => (data && analytics ? calculateActionImpacts(activeActions, data, analytics) : null),
+    [data, analytics, activeActions],
+  )
+
+  const followUps = useMemo<HrFollowUpItem[]>(() => {
+    const statusFor = (id: string, fallback: FollowUpStatus): FollowUpStatus =>
+      state.followUpStates[id] ?? fallback
+    const automationFollowUps = automations.map<HrFollowUpItem>((item) => {
+      const type = item.type === 'onboarding-checkin'
+        ? 'onboarding-check-in'
+        : item.type === 'action-overdue'
+          ? 'overdue-action'
+          : item.type === 'action-due'
+            ? 'action-review'
+            : 'employee-care'
+      return {
+        id: item.id,
+        type,
+        title: item.title,
+        description: item.description,
+        ...(item.actionId ? { relatedActionId: item.actionId } : {}),
+        ...(item.employeeContext ? { affectedGroup: item.employeeContext } : {}),
+        ...(item.actionOwner ? { owner: item.actionOwner } : {}),
+        ...(item.eventDate ? { dueDate: item.eventDate } : {}),
+        priority: item.urgency,
+        status: statusFor(item.id, item.handled ? 'completed' : 'open'),
+        source: 'automation',
+        automation: item,
+        ...(item.messageTemplate ? { messageReviewAvailable: true } : {}),
+        ...(item.linkTo ? { linkTo: item.linkTo, linkLabel: item.linkLabel } : {}),
+      }
+    })
+
+    const actionFollowUps = activeActions
+      .filter((action) => action.status !== 'cancelled')
+      .flatMap<HrFollowUpItem>((action) => {
+        const delivery = action.delivery
+        const items: HrFollowUpItem[] = []
+        if (
+          delivery &&
+          (delivery.status === 'partially-delivered' ||
+            (delivery.intendedAudienceCount !== undefined &&
+              delivery.reachedAudienceCount !== undefined &&
+              delivery.reachedAudienceCount < delivery.intendedAudienceCount))
+        ) {
+          const id = `delivery-${action.id}-${action.dueDate}`
+          items.push({
+            id,
+            type: 'delivery-follow-up',
+            title: `${action.title} delivery follow-up`,
+            description: delivery.deliveryNote || 'The intervention has not reached the full intended group yet.',
+            relatedActionId: action.id,
+            affectedGroup: delivery.affectedGroup || action.affectedScope,
+            owner: action.owner,
+            dueDate: action.dueDate,
+            priority: action.dueDate < todayIsoDate() ? 'overdue' : 'attention',
+            status: statusFor(id, 'open'),
+            createdAt: action.updatedAt,
+            source: 'action',
+            linkTo: `/actions?action=${encodeURIComponent(action.id)}`,
+            linkLabel: 'Open action',
+          })
+        }
+
+        const impact = impactResult?.impacts.find((entry) => entry.actionId === action.id)
+        if (action.status === 'completed' && delivery?.status === 'delivered' && action.impactMetricKey) {
+          const id = `outcome-${action.id}-${action.dueDate}`
+          const ready = impact?.measurementStatus === 'measurement-available'
+          items.push({
+            id,
+            type: 'outcome-review',
+            title: `${action.title} outcome review`,
+            description: ready
+              ? 'Comparable follow-up data is available for HR review.'
+              : 'Comparable follow-up data is not available yet.',
+            relatedActionId: action.id,
+            relatedSignalId: action.insightId,
+            affectedGroup: action.affectedScope,
+            owner: action.owner,
+            dueDate: action.dueDate,
+            priority: ready ? 'today' : 'upcoming',
+            status: statusFor(id, 'open'),
+            createdAt: action.completedAt ?? action.updatedAt,
+            source: 'impact',
+            linkTo: `/impact?action=${encodeURIComponent(action.id)}`,
+            linkLabel: 'Review outcome',
+          })
+        }
+        return items
+      })
+
+    const recommendationFollowUps = recommendations
+      .filter((recommendation) => recommendation.reviewStatus === 'pending-review')
+      .map<HrFollowUpItem>((recommendation) => ({
+        id: `recommendation-review-${recommendation.id}`,
+        type: 'hr-review',
+        title: recommendation.title,
+        description: 'Recommendation requires HR review before an action can be approved.',
+        ...(recommendation.insightId ? { relatedSignalId: recommendation.insightId } : {}),
+        affectedGroup: recommendation.affectedScope,
+        owner: recommendation.suggestedOwner,
+        dueDate: todayIsoDate(),
+        priority: recommendation.priorityLevel === 'critical' ? 'overdue' : 'today',
+        status: statusFor(`recommendation-review-${recommendation.id}`, 'open'),
+        source: 'recommendation',
+        linkTo: `/actions?recommendation=${encodeURIComponent(recommendation.id)}`,
+        linkLabel: 'Review recommendation',
+      }))
+
+    const unique = new Map<string, HrFollowUpItem>()
+    ;[...automationFollowUps, ...actionFollowUps, ...recommendationFollowUps].forEach((item) => {
+      if (!unique.has(item.id)) unique.set(item.id, item)
+    })
+    const priorityOrder = { overdue: 0, today: 1, upcoming: 2, attention: 3 }
+    return [...unique.values()].sort(
+      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority] ||
+        (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') ||
+        a.title.localeCompare(b.title),
+    )
+  }, [activeActions, automations, impactResult, recommendations, state.followUpStates])
+
+  const followUpSummary = useMemo(() => ({
+    open: followUps.filter((item) => item.status === 'open' || item.status === 'in-progress').length,
+    overdue: followUps.filter((item) => item.status !== 'completed' && item.status !== 'dismissed' && item.priority === 'overdue').length,
+    dueSoon: followUps.filter((item) => item.status !== 'completed' && item.status !== 'dismissed' && (item.priority === 'today' || item.priority === 'upcoming')).length,
+    completed: followUps.filter((item) => item.status === 'completed' || item.status === 'dismissed').length,
+  }), [followUps])
+
   const summary = useMemo<AutomationSummary>(
     () => ({
       needsAttention: activeAutomations.length,
@@ -125,8 +271,22 @@ export function useHrAutomations(): HrAutomationsState {
       const ids = new Set(current.handledIds)
       if (handled) ids.add(automationId)
       else ids.delete(automationId)
-      return { ...current, handledIds: [...ids] }
+      return {
+        ...current,
+        handledIds: [...ids],
+        followUpStates: {
+          ...current.followUpStates,
+          [automationId]: handled ? 'completed' : 'open',
+        },
+      }
     })
+  }, [])
+
+  const updateFollowUpStatus = useCallback((followUpId: string, status: FollowUpStatus) => {
+    setState((current) => ({
+      ...current,
+      followUpStates: { ...current.followUpStates, [followUpId]: status },
+    }))
   }, [])
 
   const saveMessageEdit = useCallback((automationId: string, message: AutomationMessage) => {
@@ -139,7 +299,7 @@ export function useHrAutomations(): HrAutomationsState {
   /** Clears reminder state only; approved demo actions are left untouched. */
   const resetAutomations = useCallback(() => {
     clearAutomationState()
-    setState({ handledIds: [], messageEdits: {} })
+    setState({ handledIds: [], messageEdits: {}, followUpStates: {} })
   }, [])
 
   return {
@@ -150,6 +310,7 @@ export function useHrAutomations(): HrAutomationsState {
     summary,
     demoActions: activeActions,
     analytics,
+    intelligenceItems,
     topPriorityItems,
     recommendations,
     todayIso: todayIsoDate(),
@@ -160,5 +321,8 @@ export function useHrAutomations(): HrAutomationsState {
     markHandled,
     saveMessageEdit,
     resetAutomations,
+    followUps,
+    followUpSummary,
+    updateFollowUpStatus,
   }
 }

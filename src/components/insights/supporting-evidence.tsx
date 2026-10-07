@@ -14,11 +14,12 @@ import {
   formatPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 const SOURCE_LABELS: Record<EvidenceSource, string> = {
-  pulse: 'Pulse',
-  onboarding: 'Onboarding',
-  exit: 'Exit',
+  pulse: 'Pulse Survey',
+  onboarding: 'Onboarding Survey',
+  exit: 'Exit Survey',
 }
 
 const STRENGTH_LABELS: Record<EvidenceStrength, string> = {
@@ -35,6 +36,7 @@ function formatEvidenceValue(item: EvidenceItem, value: number | null): string {
 
 function DriverCard({ candidate }: { candidate: DriverCandidate }) {
   const keyItem = candidate.evidenceItems[0]
+  const safeCommentMentions = candidate.commentMentions.filter((mention) => canShowGroupDetail(mention.totalComments))
 
   return (
     <Card className="min-w-0">
@@ -58,9 +60,9 @@ function DriverCard({ candidate }: { candidate: DriverCandidate }) {
         <p className="text-muted-foreground">
           Smallest source n = {formatCount(candidate.sampleSize)}. {candidate.summary}
         </p>
-        {candidate.commentMentions.length > 0 ? (
+        {safeCommentMentions.length > 0 ? (
           <ul className="space-y-1 text-xs text-muted-foreground">
-            {candidate.commentMentions.map((mention) => (
+            {safeCommentMentions.map((mention) => (
               <li key={`${mention.source}:${mention.theme}`}>
                 {SOURCE_LABELS[mention.source]} comment theme: {mention.mentionCount} of {mention.totalComments} comments mention {mention.label.toLowerCase()}
                 {mention.isSmallSample ? ' (small sample)' : ''}. Mentions do not establish sentiment.
@@ -100,6 +102,24 @@ export function SupportingEvidence({
 }) {
   const relatedItems = evidence.driverCandidates.flatMap((candidate) => candidate.evidenceItems)
   const uniqueItems = [...new Map(relatedItems.map((item) => [item.id, item])).values()]
+  const sampleSizes = [
+    ...uniqueItems.map((item) => item.sampleSize),
+    ...evidence.exitReasons.map((item) => item.sampleSize),
+  ]
+  const safeCommentThemes = evidence.commentThemes.filter((item) => canShowGroupDetail(item.totalComments))
+  const suppressed = (sampleSizes.length === 0 && safeCommentThemes.length === 0) || sampleSizes.some((sampleSize) => !canShowGroupDetail(sampleSize))
+
+  if (suppressed) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Supporting Evidence</CardTitle>
+          <CardDescription>Group-level evidence is protected by the response privacy rule.</CardDescription>
+        </CardHeader>
+        <CardContent><p className="text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p></CardContent>
+      </Card>
+    )
+  }
 
   return (
     <section className="space-y-5" aria-labelledby={headingId}>
@@ -166,7 +186,7 @@ export function SupportingEvidence({
         </Card>
       ) : null}
 
-      {evidence.commentThemes.length > 0 ? (
+      {safeCommentThemes.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Comment Theme Mentions</CardTitle>
@@ -177,7 +197,7 @@ export function SupportingEvidence({
           </CardHeader>
           <CardContent>
             <ul className="grid gap-2 text-sm sm:grid-cols-2">
-              {evidence.commentThemes.map((mention) => (
+              {safeCommentThemes.map((mention) => (
                 <li key={`${mention.source}:${mention.theme}`} className="rounded-md border p-3">
                   <p className="font-medium">{mention.label} · {SOURCE_LABELS[mention.source]}</p>
                   <p className="tabular-nums text-muted-foreground">

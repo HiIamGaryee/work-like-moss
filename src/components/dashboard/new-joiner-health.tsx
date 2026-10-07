@@ -5,11 +5,13 @@ import { Progress } from '@/components/ui/progress'
 import { NEW_JOINER_MAX_MONTHS, SCORE_SCALE } from '@/data/hr-analytics.constants'
 import type { OnboardingDimensionMetric, OnboardingGroupMetric } from '@/types/hr-analytics'
 import { formatCount, formatScoreOutOf, scoreToProgress } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type NewJoinerHealthProps = {
   newJoinerCount: number
   onboarding: OnboardingGroupMetric | null
   weakestDimension: OnboardingDimensionMetric | null
+  onboardingResponseCount: number
 }
 
 const SCORE_ROWS = [
@@ -23,6 +25,7 @@ export function NewJoinerHealth({
   newJoinerCount,
   onboarding,
   weakestDimension,
+  onboardingResponseCount,
 }: NewJoinerHealthProps) {
   return (
     <Card className="min-w-0">
@@ -41,7 +44,7 @@ export function NewJoinerHealth({
           <span className="text-xs text-muted-foreground">new joiners</span>
         </div>
 
-        {onboarding ? (
+        {onboarding && canShowGroupDetail(onboarding.responseCount) ? (
           <>
             <dl className="space-y-3.5">
               {SCORE_ROWS.map(({ key, label }) => {
@@ -68,11 +71,13 @@ export function NewJoinerHealth({
               Based on {formatCount(onboarding.responseCount)} onboarding responses.
             </p>
           </>
+        ) : onboarding ? (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p>
         ) : (
           <EmptyState icon={UserPlus} title="No onboarding responses from new joiners." />
         )}
 
-        {weakestDimension ? (
+        {weakestDimension && canShowGroupDetail(onboardingResponseCount) ? (
           <div className="space-y-0.5 border-t pt-4">
             <p className="text-xs text-muted-foreground">
               Lowest onboarding dimension · all responses

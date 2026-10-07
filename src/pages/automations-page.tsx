@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AutomationRulesSheet } from '@/components/automations/automation-rules-sheet'
 import { AutomationSummary } from '@/components/automations/automation-summary'
-import { HrCareInbox } from '@/components/automations/hr-care-inbox'
+import { FollowUpQueue } from '@/components/automations/follow-up-queue'
 import { MessageReviewSheet } from '@/components/automations/message-review-sheet'
 import { ResponsibleAutomation } from '@/components/automations/responsible-automation'
 import { DatasetError } from '@/components/dataset-status'
@@ -25,7 +25,7 @@ import {
 } from '@/data/hr-automation-rules'
 import { DEMO_EXTENSION_NOTE } from '@/data/hr-care-demo'
 import { useHrAutomations } from '@/hooks/use-hr-automations'
-import type { AutomationType, HrAutomationItem } from '@/types/hr-automation'
+import type { AutomationType, FollowUpStatus, HrAutomationItem } from '@/types/hr-automation'
 import { formatCount } from '@/utils/format'
 
 const INBOX_TABS = [
@@ -89,10 +89,10 @@ function AutomationsSkeleton() {
  */
 export function AutomationsPage() {
   const {
-    activeAutomations,
-    handledAutomations,
-    caps,
     summary,
+    followUps,
+    followUpSummary,
+    updateFollowUpStatus,
     storageAvailable,
     isLoading,
     error,
@@ -107,21 +107,35 @@ export function AutomationsPage() {
   const [reviewing, setReviewing] = useState<HrAutomationItem | null>(null)
 
   const shown = useMemo(() => {
-    const base = tab === 'handled' ? handledAutomations : activeAutomations
     const definition = AUTOMATION_CATEGORIES.find((entry) => entry.key === category)
     const allowed = definition?.types ? new Set<AutomationType>(definition.types) : null
 
-    return base
+    return followUps
       .filter((item) => {
-        if (tab === 'all' || tab === 'handled') return true
-        return item.urgency === tab
+        if (tab === 'handled') return item.status === 'completed' || item.status === 'dismissed'
+        if (tab === 'all') return item.status !== 'completed' && item.status !== 'dismissed'
+        return item.status !== 'completed' && item.status !== 'dismissed' && item.priority === tab
       })
-      .filter((item) => (allowed ? allowed.has(item.type) : true))
-  }, [tab, category, activeAutomations, handledAutomations])
+      .filter((item) => {
+        if (!allowed) return true
+        if (item.automation) return allowed.has(item.automation.type)
+        if (category === 'onboarding') return item.type === 'onboarding-check-in'
+        if (category === 'actions') return ['action-review', 'overdue-action', 'delivery-follow-up', 'outcome-review'].includes(item.type)
+        return category === 'all'
+      })
+  }, [tab, category, followUps])
 
   const handleToggleHandled = (automationId: string, handled: boolean): void => {
     markHandled(automationId, handled)
     toast.success(handled ? 'Reminder marked as handled' : 'Reminder reopened')
+  }
+
+  const handleFollowUpStatus = (followUpId: string, status: FollowUpStatus): void => {
+    const item = followUps.find((entry) => entry.id === followUpId)
+    updateFollowUpStatus(followUpId, status)
+    if (item?.automation && status === 'completed') markHandled(followUpId, true)
+    if (item?.automation && status === 'open') markHandled(followUpId, false)
+    toast.success(status === 'completed' ? 'Follow-up marked complete' : status === 'dismissed' ? 'Follow-up dismissed' : 'Follow-up reopened')
   }
 
   const handleReset = (): void => {
@@ -133,24 +147,26 @@ export function AutomationsPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Automations"
-        description="Surface timely employee-care and action reminders before important moments are missed."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Human approval required</Badge>
-            <AutomationRulesSheet />
-            <ResetDemoMenu
-              label="Reset automation demo"
-              menuAriaLabel="Automation options"
-              confirmTitle="Reset automation demo?"
-              confirmDescription="Handled reminders will become active again. Employee and action data will not be changed."
-              onReset={handleReset}
-            />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Follow-Up Queue"
+          description="Tasks and reviews requiring HR attention."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Human approval required</Badge>
+              <AutomationRulesSheet />
+              <ResetDemoMenu
+                label="Reset follow-up demo"
+                menuAriaLabel="Follow-Up options"
+                confirmTitle="Reset follow-up demo?"
+                confirmDescription="Handled reminders will become active again. Employee and action data will not be changed."
+                onReset={handleReset}
+              />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -160,14 +176,27 @@ export function AutomationsPage() {
         <div className="space-y-6">
           <AutomationSummary summary={summary} />
 
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+            {[
+              { label: 'Overdue', value: followUpSummary.overdue },
+              { label: 'Due soon', value: followUpSummary.dueSoon },
+              { label: 'Open', value: followUpSummary.open },
+            ].map((entry) => (
+              <Card key={entry.label} size="sm" className="gap-2">
+                <CardHeader><p className="text-xs text-muted-foreground">{entry.label}</p></CardHeader>
+                <CardContent><p className="text-2xl font-semibold tracking-tight">{formatCount(entry.value)}</p></CardContent>
+              </Card>
+            ))}
+          </div>
+
           <section className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <h2 className="text-lg font-semibold tracking-tight">
-                  Today needs your attention
+                  Follow-Up Queue
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Ranked by urgency. Every reminder waits for a person.
+                  Onboarding checks, action reviews, delivery follow-ups and HR review work in one place.
                 </p>
               </div>
               <Select
@@ -192,20 +221,18 @@ export function AutomationsPage() {
                 {INBOX_TABS.map((entry) => (
                   <TabsTrigger key={entry.key} value={entry.key}>
                     {entry.label}
-                    {entry.key === 'handled' && summary.handled > 0
-                      ? ` · ${formatCount(summary.handled)}`
+                    {entry.key === 'handled' && followUpSummary.completed > 0
+                      ? ` · ${formatCount(followUpSummary.completed)}`
                       : ''}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
 
-            <HrCareInbox
+            <FollowUpQueue
               items={shown}
-              caps={tab === 'handled' ? [] : caps}
-              filtered={tab !== 'all' || category !== 'all'}
               onReviewMessage={setReviewing}
-              onToggleHandled={handleToggleHandled}
+              onStatusChange={handleFollowUpStatus}
             />
           </section>
 

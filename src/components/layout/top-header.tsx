@@ -18,7 +18,7 @@ type HeaderAction = {
  * The bell links to the Attention Inbox instead of opening a second, parallel
  * notification surface — there is one place reminders live.
  */
-const headerActions: HeaderAction[] = [{ label: 'Automations', icon: Bell, href: '/automations' }]
+const headerActions: HeaderAction[] = [{ label: 'Follow-Up', icon: Bell, href: '/automations' }]
 
 /**
  * Longest matching prefix, so a nested route like `/insights/:id` still reports

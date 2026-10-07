@@ -16,6 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import type { ActionImpact } from '@/types/hr-impact'
 import { buildActionLoopStages } from '@/utils/decision-loop'
 import { EMPTY_VALUE, formatDelta } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type ActionImpactCardProps = {
   impact: ActionImpact
@@ -34,6 +35,10 @@ type ActionImpactCardProps = {
 export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCardProps) {
   const { measurement } = impact
   const isOfficial = impact.origin === 'official-dataset'
+  const measurementPrivacySuppressed = measurement !== null && (
+    !canShowGroupDetail(measurement.baselineSampleSize) ||
+    (measurement.currentValue !== null && !canShowGroupDetail(measurement.currentSampleSize))
+  )
 
   const facts = [
     { key: 'issue', label: 'Linked issue', value: impact.issueTitle || EMPTY_VALUE },
@@ -86,7 +91,7 @@ export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCa
 
         {/* Baseline and target are shown even while awaiting a later reading —
             an approved target with no result yet is the honest state, not a gap. */}
-        {measurement ? (
+        {measurement && !measurementPrivacySuppressed ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <BeforeAfterMetric measurement={measurement} />
             <div className="min-w-0 space-y-3 rounded-lg border p-3">
@@ -96,10 +101,10 @@ export function ActionImpactCard({ impact, highlighted = false }: ActionImpactCa
               <MeasurementTimeline impact={impact} />
             </div>
           </div>
-        ) : null}
+        ) : measurement ? <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p> : null}
 
         {/* Context, not a control group: the same metric across the same waves. */}
-        {measurement?.companyDifference !== undefined && measurement.difference !== null ? (
+        {!measurementPrivacySuppressed && measurement?.companyDifference !== undefined && measurement.difference !== null ? (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-dashed p-3">
             <div className="min-w-0 space-y-0.5">
               <dt className="text-xs text-muted-foreground">Affected group change</dt>

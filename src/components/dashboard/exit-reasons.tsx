@@ -3,6 +3,7 @@ import { EmptyState } from '@/components/empty-state'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { ExitReasonMetric } from '@/types/hr-analytics'
 import { formatCount, formatPercentage } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type ExitReasonsProps = {
   reasons: ExitReasonMetric[]
@@ -24,7 +25,9 @@ export function ExitReasons({ reasons, responseCount }: ExitReasonsProps) {
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-5">
-        {reasons.length === 0 ? (
+        {!canShowGroupDetail(responseCount) ? (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p>
+        ) : reasons.length === 0 ? (
           <EmptyState icon={DoorOpen} title="No exit survey responses available." />
         ) : (
           <ol className="space-y-3.5">

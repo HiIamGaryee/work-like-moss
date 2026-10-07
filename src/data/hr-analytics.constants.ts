@@ -23,6 +23,9 @@ export const NEW_JOINER_MAX_MONTHS = 6
 /** Below this count, survey comparisons display a small-sample notice. */
 export const MIN_ANALYSIS_SAMPLE_SIZE = 10
 
+/** Minimum responses before issue-detail group evidence is shown. */
+export const MIN_GROUP_DETAIL_RESPONSES = 5
+
 /** Descriptive demo cutoffs, not statistical significance thresholds. */
 export const MEANINGFUL_SCORE_GAP = 0.2
 export const STRONG_SCORE_GAP = 0.3
