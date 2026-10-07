@@ -352,24 +352,26 @@ export function ActionsPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Actions"
-        description="Turn workforce insights into accountable interventions with clear ownership and measurable outcomes."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Human approval required</Badge>
-            <InfoHint label="action recommendation rules" hint={ACTION_RULES_NOTE} />
-            <ResetDemoMenu
-              label="Reset demo"
-              menuAriaLabel="Action Centre options"
-              confirmTitle="Reset demo actions?"
-              confirmDescription="This will remove locally approved and rejected recommendations. Official dataset actions will not be changed."
-              onReset={handleReset}
-            />
-          </div>
-        }
-      />
+    <div className="w-full space-y-8">
+      <section className="border-b pb-6">
+        <PageHeader
+          title="Actions"
+          description="Turn workforce insights into accountable interventions with clear ownership and measurable outcomes."
+          actions={
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Human approval required</Badge>
+              <InfoHint label="action recommendation rules" hint={ACTION_RULES_NOTE} />
+              <ResetDemoMenu
+                label="Reset demo"
+                menuAriaLabel="Action Centre options"
+                confirmTitle="Reset demo actions?"
+                confirmDescription="This will remove locally approved and rejected recommendations. Official dataset actions will not be changed."
+                onReset={handleReset}
+              />
+            </div>
+          }
+        />
+      </section>
 
       {error ? <DatasetError message={error} onRetry={retry} /> : null}
 
@@ -377,23 +379,44 @@ export function ActionsPage() {
 
       {!isLoading && !error ? (
         <div className="space-y-6">
-          <ActionSummary recommendations={recommendations} activeActions={activeActions} />
+          <section className="space-y-4" aria-labelledby="action-overview-title">
+            <div className="space-y-1">
+              <h2 id="action-overview-title" className="text-lg font-semibold tracking-tight">Action Overview</h2>
+              <p className="text-sm text-muted-foreground">Monitor recommendation review and approved action progress.</p>
+            </div>
+            <ActionSummary recommendations={recommendations} activeActions={activeActions} />
+          </section>
 
-          <Tabs value={tab} onValueChange={(value) => setTab(value as ActionTabKey)}>
-            <TabsList className="w-full justify-start overflow-x-auto">
-              {ACTION_TABS.map((entry) => (
-                <TabsTrigger key={entry.key} value={entry.key}>
-                  {entry.label}
-                  {entry.key === 'recommendations' && pendingCount > 0
-                    ? ` · ${formatCount(pendingCount)}`
-                    : ''}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          <section className="space-y-5 border-t pt-7" aria-labelledby="action-workspace-title">
+            <div className="space-y-1">
+              <h2 id="action-workspace-title" className="text-lg font-semibold tracking-tight">Action Workspace</h2>
+              <p className="text-sm text-muted-foreground">Review system recommendations and manage approved interventions.</p>
+            </div>
 
-            <TabsContent value="recommendations" className="space-y-4 pt-2">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">{ACTION_TABS[0].description}</p>
+            <Tabs value={tab} onValueChange={(value) => setTab(value as ActionTabKey)}>
+              <div className="rounded-lg border bg-muted/50 p-1">
+                <TabsList className="w-full justify-start overflow-x-auto bg-transparent p-0">
+                  {ACTION_TABS.map((entry) => (
+                    <TabsTrigger
+                      key={entry.key}
+                      value={entry.key}
+                      className="data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-semibold data-[state=active]:shadow-sm"
+                    >
+                      {entry.label}
+                      {entry.key === 'recommendations' && pendingCount > 0
+                        ? ` · ${formatCount(pendingCount)}`
+                        : ''}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="recommendations" className="space-y-5 pt-2">
+                <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Suggested Actions · {formatCount(shownRecommendations.length)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[0].description}</p>
+                  </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Select
                     value={reviewFilter}
@@ -426,7 +449,7 @@ export function ActionsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+                </div>
 
               {shownRecommendations.length === 0 ? (
                 <Card>
@@ -439,7 +462,7 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {shownRecommendations.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.id}
@@ -450,11 +473,14 @@ export function ActionsPage() {
                   ))}
                 </div>
               )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="active" className="space-y-4 pt-2">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">{ACTION_TABS[1].description}</p>
+              <TabsContent value="active" className="space-y-5 pt-2">
+                <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Active Actions · {formatCount(shownActions.length)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[1].description}</p>
+                  </div>
                 <Select
                   value={statusFilter}
                   onValueChange={(value) => setStatusFilter(value as StatusFilterKey)}
@@ -470,7 +496,7 @@ export function ActionsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+                </div>
 
               {shownActions.length === 0 ? (
                 <Card>
@@ -483,7 +509,7 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {shownActions.map((action) => (
                     <ActiveActionCard
                       key={action.id}
@@ -496,10 +522,13 @@ export function ActionsPage() {
                   ))}
                 </div>
               )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="completed" className="space-y-4 pt-2">
-              <p className="text-sm text-muted-foreground">{ACTION_TABS[2].description}</p>
+              <TabsContent value="completed" className="space-y-5 pt-2">
+                <div className="border-b pb-4">
+                  <p className="text-sm font-medium">Completed Actions · {formatCount(completedActions.length)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[2].description}</p>
+                </div>
               {completedActions.length === 0 ? (
                 <Card>
                   <CardContent>
@@ -511,7 +540,7 @@ export function ActionsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5">
                   {completedActions.map((action) => (
                     <ActiveActionCard
                       key={action.id}
@@ -527,7 +556,7 @@ export function ActionsPage() {
               {cancelledActions.length > 0 ? (
                 <section className="space-y-3 border-t pt-4">
                   <h3 className="text-sm font-medium">Cancelled action history</h3>
-                  <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-5">
                     {cancelledActions.map((action) => (
                       <ActiveActionCard
                         key={action.id}
@@ -541,9 +570,9 @@ export function ActionsPage() {
                   </div>
                 </section>
               ) : null}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="existing" className="pt-2">
+              <TabsContent value="existing" className="pt-2">
               <Card className="min-w-0">
                 <CardHeader>
                   <div className="flex flex-wrap items-center gap-2">
@@ -561,8 +590,9 @@ export function ActionsPage() {
                   <ExistingActionsTable actions={officialActions} />
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+            </Tabs>
+          </section>
 
           <p className="text-xs text-muted-foreground">
             {storageAvailable

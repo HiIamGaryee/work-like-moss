@@ -9,6 +9,7 @@ import { InsightAnalysisPage } from '@/pages/insight-analysis-page'
 import { PatternInsightsPage } from '@/pages/pattern-insights-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { OverviewPage } from '@/pages/overview-page'
+import { FaqPage } from '@/pages/faq-page'
 
 export default function App() {
   return (
@@ -16,6 +17,8 @@ export default function App() {
       <Route element={<DashboardLayout />}>
         <Route index element={<OverviewPage />} />
         <Route path="about" element={<AboutMvpPage />} />
+        <Route path="demo-guide" element={<AboutMvpPage />} />
+        <Route path="faq" element={<FaqPage />} />
         <Route path="insights" element={<PatternInsightsPage />} />
         <Route path="insights/:insightId" element={<InsightAnalysisPage />} />
         <Route path="employees" element={<EmployeesPage />} />
