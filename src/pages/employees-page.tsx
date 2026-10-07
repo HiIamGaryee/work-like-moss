@@ -102,9 +102,6 @@ export function EmployeesPage() {
     if (!data) return
     setSelected({
       employee,
-      onboarding: data.onboardingSurveys.filter((row) => row.employeeId === employee.employeeId),
-      pulse: data.pulseSurveys.filter((row) => row.employeeId === employee.employeeId),
-      exit: data.exitSurveys.find((row) => row.employeeId === employee.employeeId) ?? null,
       careProfile:
         demoCareProfiles.find((profile) => profile.employeeId === employee.employeeId) ?? null,
     })

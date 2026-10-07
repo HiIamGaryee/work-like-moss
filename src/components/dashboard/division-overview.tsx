@@ -12,8 +12,8 @@ import {
 } from '@/components/ui/table'
 import { METRIC_HINTS } from '@/data/dashboard.constants'
 import type { DivisionAnalytics } from '@/types/hr-analytics'
-import { sortDescending } from '@/utils/analytics'
 import { formatCount, formatPercentage, formatRatioAsPercentage, formatScore } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type DivisionOverviewProps = {
   divisions: DivisionAnalytics[]
@@ -43,9 +43,16 @@ export function DivisionOverview({ divisions }: DivisionOverviewProps) {
    * Ordering only — every value below is already calculated by the analytics
    * layer. Highest leaver rate first is a factual sort, not a priority score.
    */
-  const divisionRows = sortDescending(divisions, (entry) => entry.employees.leaverRate).map(
+  const divisionRows = [...divisions].sort((a, b) => {
+    const aVisible = canShowGroupDetail(a.pulse?.latest?.responseCount)
+    const bVisible = canShowGroupDetail(b.pulse?.latest?.responseCount)
+    if (aVisible !== bVisible) return Number(bVisible) - Number(aVisible)
+    if (!aVisible || !bVisible) return a.division.localeCompare(b.division)
+    return (b.employees.leaverRate ?? -Infinity) - (a.employees.leaverRate ?? -Infinity)
+  }).map(
     (entry) => ({
       division: entry.division,
+      canShow: canShowGroupDetail(entry.pulse?.latest?.responseCount),
       employees: formatCount(entry.employees.employeeCount),
       leavers: formatCount(entry.employees.leaverCount),
       leaverRate: formatPercentage(entry.employees.leaverRate),
@@ -98,12 +105,12 @@ export function DivisionOverview({ divisions }: DivisionOverviewProps) {
                 <TableRow key={row.division}>
                   <TableCell className="font-medium">{row.division}</TableCell>
                   <TableCell className="text-right tabular-nums">{row.employees}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.leavers}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.leaverRate}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {row.baseEngagement}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{row.latestPulse}</TableCell>
+                  {row.canShow ? <>
+                    <TableCell className="text-right tabular-nums">{row.leavers}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.leaverRate}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{row.baseEngagement}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.latestPulse}</TableCell>
+                  </> : <TableCell colSpan={4} className="text-right text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</TableCell>}
                 </TableRow>
               ))}
             </TableBody>

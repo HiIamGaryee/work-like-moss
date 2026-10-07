@@ -24,6 +24,7 @@ import {
   formatPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 /**
  * Composition only. Every number comes from the Step 4 analytics layer, which
@@ -54,7 +55,9 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
     },
     {
       label: 'Pulse Engagement',
-      value: formatScoreOutOf(overview.latestPulse.engagement, SCORE_SCALE.max),
+      value: canShowGroupDetail(overview.latestPulse.responseCount)
+        ? formatScoreOutOf(overview.latestPulse.engagement, SCORE_SCALE.max)
+        : PRIVACY_SUPPRESSED_MESSAGE,
       description: overview.latestPulse.wave
         ? `Latest wave · ${overview.latestPulse.wave}`
         : undefined,
@@ -69,7 +72,9 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
     },
     {
       label: 'New Joiner Experience',
-      value: formatScoreOutOf(onboarding.newJoiners?.averageOverallScore ?? null, SCORE_SCALE.max),
+      value: onboarding.newJoiners && canShowGroupDetail(onboarding.newJoiners.responseCount)
+        ? formatScoreOutOf(onboarding.newJoiners.averageOverallScore, SCORE_SCALE.max)
+        : onboarding.newJoiners ? PRIVACY_SUPPRESSED_MESSAGE : '—',
       description: `Employees within first ${NEW_JOINER_MAX_MONTHS} months`,
       hint: METRIC_HINTS.newJoiner,
     },
@@ -142,6 +147,7 @@ export function OverviewPage() {
               newJoinerCount={analytics.employees.newJoiners.newJoinerCount}
               onboarding={analytics.onboarding.newJoiners}
               weakestDimension={analytics.onboarding.weakestDimension}
+              onboardingResponseCount={analytics.onboarding.responseCount}
             />
           </div>
 
@@ -156,6 +162,7 @@ export function OverviewPage() {
             engagementChange={analytics.pulse.engagementChange}
             topExitReason={analytics.exits.topExitReasons[0] ?? null}
             exitResponseCount={analytics.exits.responseCount}
+            onboardingResponseCount={analytics.onboarding.responseCount}
           />
 
           <DivisionOverview divisions={analytics.divisions} />

@@ -36,6 +36,7 @@ import type {
 import { todayIsoDate } from '@/utils/date'
 import { formatCount } from '@/utils/format'
 import { isActionOverdue } from '@/utils/hr-action-view'
+import { isGroupScopeSuppressed } from '@/utils/insight-privacy'
 
 /* ------------------------------------------------------------------ filters */
 
@@ -136,6 +137,7 @@ function ActionsSkeleton() {
  */
 export function ActionsPage() {
   const {
+    analytics,
     recommendations,
     activeActions,
     officialActions,
@@ -162,6 +164,7 @@ export function ActionsPage() {
   const today = todayIsoDate()
   const focusId = searchParams.get('recommendation')
   const focusIssueId = searchParams.get('issue')
+  const focusActionId = searchParams.get('action')
 
   /**
    * `/actions?recommendation=<id>` arrives from an insight's "Recommended Next
@@ -169,7 +172,24 @@ export function ActionsPage() {
    * never opens a review panel for something already approved.
    */
   useEffect(() => {
-    if ((!focusId && !focusIssueId) || isLoading) return
+    if ((!focusId && !focusIssueId && !focusActionId) || isLoading) return
+
+    if (focusActionId) {
+      const action = activeActions.find((entry) => entry.id === focusActionId)
+      if (action) {
+        setTab(action.status === 'completed' || action.status === 'cancelled' ? 'completed' : 'active')
+        setDetailAction(action)
+      }
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current)
+          next.delete('action')
+          return next
+        },
+        { replace: true },
+      )
+      return
+    }
 
     const recommendation = recommendations.find((entry) =>
       focusIssueId ? entry.issueId === focusIssueId : entry.id === focusId,
@@ -187,6 +207,8 @@ export function ActionsPage() {
       } else if (recommendation.reviewStatus === 'rejected') {
         setTab('recommendations')
         setReviewFilter('rejected')
+      } else if (isGroupScopeSuppressed(recommendation.impactScope, recommendation.evidenceSources, analytics)) {
+        setTab('recommendations')
       } else {
         setTab('recommendations')
         setReviewing(recommendation)
@@ -199,11 +221,12 @@ export function ActionsPage() {
         const next = new URLSearchParams(current)
         next.delete('recommendation')
         next.delete('issue')
+        next.delete('action')
         return next
       },
       { replace: true },
     )
-  }, [focusId, focusIssueId, isLoading, recommendations, activeActions, setSearchParams])
+  }, [focusId, focusIssueId, focusActionId, isLoading, recommendations, activeActions, analytics, setSearchParams])
 
   const shownRecommendations = useMemo(
     () =>
@@ -422,6 +445,7 @@ export function ActionsPage() {
                       key={recommendation.id}
                       recommendation={recommendation}
                       onReview={setReviewing}
+                      privacySuppressed={isGroupScopeSuppressed(recommendation.impactScope, recommendation.evidenceSources, analytics)}
                     />
                   ))}
                 </div>
@@ -467,6 +491,7 @@ export function ActionsPage() {
                       today={today}
                       onStatusChange={handleStatusChange}
                       onOpenDetail={setDetailAction}
+                      privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                     />
                   ))}
                 </div>
@@ -494,6 +519,7 @@ export function ActionsPage() {
                       today={today}
                       onStatusChange={handleStatusChange}
                       onOpenDetail={setDetailAction}
+                      privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                     />
                   ))}
                 </div>
@@ -509,6 +535,7 @@ export function ActionsPage() {
                         today={today}
                         onStatusChange={handleStatusChange}
                         onOpenDetail={setDetailAction}
+                        privacySuppressed={isGroupScopeSuppressed(action.impactScope, action.evidenceSources ?? [], analytics)}
                       />
                     ))}
                   </div>
@@ -559,6 +586,7 @@ export function ActionsPage() {
         onClose={() => setDetailAction(null)}
         onUpdateAssignment={handleAssignmentChange}
         onUpdateDelivery={handleDeliveryChange}
+        privacySuppressed={detailAction ? isGroupScopeSuppressed(detailAction.impactScope, detailAction.evidenceSources ?? [], analytics) : false}
       />
     </div>
   )

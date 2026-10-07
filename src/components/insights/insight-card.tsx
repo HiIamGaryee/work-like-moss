@@ -20,6 +20,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { CATEGORY_LABELS, STRENGTH_LABELS } from '@/data/hr-insight-rules'
 import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import type { HrInsight, InsightCategory } from '@/types/hr-insights'
+import type { HrAnalytics } from '@/types/hr-analytics'
+import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
 import type { InsightPriority } from '@/types/hr-intelligence'
 import {
   formatCount,
@@ -33,6 +35,7 @@ type InsightCardProps = {
   insight: HrInsight
   priority: InsightPriority
   topDriverLabel: string | null
+  analytics: HrAnalytics | null
 }
 
 const CATEGORY_ICONS: Record<InsightCategory, ComponentType<{ className?: string }>> = {
@@ -57,10 +60,11 @@ function formatDifference(insight: HrInsight, value: number | null | undefined):
   return isRateMetricLabel(insight.metricLabel) ? `${formatDelta(value)} pp` : formatDelta(value)
 }
 
-export function InsightCard({ insight, priority, topDriverLabel }: InsightCardProps) {
+export function InsightCard({ insight, priority, topDriverLabel, analytics }: InsightCardProps) {
   const [open, setOpen] = useState(false)
   const CategoryIcon = CATEGORY_ICONS[insight.category]
   const crossSource = insight.dataSources.length > 1
+  const suppressed = isInsightDetailSuppressed({ insight }, analytics)
 
   return (
     <Card className="min-w-0 transition-colors hover:bg-muted/30">
@@ -72,7 +76,7 @@ export function InsightCard({ insight, priority, topDriverLabel }: InsightCardPr
           </span>
           <span className="ml-auto flex items-center gap-1.5">
             {crossSource ? <Badge variant="outline">Cross-source signal</Badge> : null}
-            <PriorityBadge level={priority.level} score={priority.score} />
+            <PriorityBadge level={priority.level} score={suppressed ? undefined : priority.score} />
           </span>
         </div>
         <CardTitle className="text-base leading-snug">{insight.title}</CardTitle>
@@ -81,7 +85,11 @@ export function InsightCard({ insight, priority, topDriverLabel }: InsightCardPr
       <CardContent className="flex flex-1 flex-col gap-4">
         <p className="text-sm text-muted-foreground">{insight.summary}</p>
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {suppressed ? (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            Insufficient responses. Detailed analytics hidden to protect employee privacy.
+          </p>
+        ) : <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
           <div className="min-w-0 space-y-0.5">
             <dt className="text-xs text-muted-foreground">Affected</dt>
             <dd className="text-sm font-medium break-words">{insight.affectedScope}</dd>
@@ -104,14 +112,14 @@ export function InsightCard({ insight, priority, topDriverLabel }: InsightCardPr
               {formatDifference(insight, insight.difference)}
             </dd>
           </div>
-        </dl>
+        </dl>}
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-2">
           <div className="min-w-0 space-y-0.5">
             <dt className="text-xs text-muted-foreground">Top likely driver</dt>
-            <dd className="text-sm font-medium break-words">{topDriverLabel ?? '—'}</dd>
+            <dd className="text-sm font-medium break-words">{suppressed ? 'Insufficient responses' : topDriverLabel ?? '—'}</dd>
           </div>
-          {insight.sampleSize !== undefined ? (
+          {!suppressed && insight.sampleSize !== undefined ? (
             <div className="min-w-0 space-y-0.5">
               <dt className="text-xs text-muted-foreground">Sample</dt>
               <dd className="text-sm break-words">
@@ -121,7 +129,7 @@ export function InsightCard({ insight, priority, topDriverLabel }: InsightCardPr
           ) : null}
         </dl>
 
-        <Collapsible open={open} onOpenChange={setOpen}>
+        {!suppressed ? <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-md border-t pt-3 text-sm font-medium transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
             <span>{open ? 'Hide evidence' : 'View evidence'}</span>
             <ChevronDown
@@ -148,7 +156,7 @@ export function InsightCard({ insight, priority, topDriverLabel }: InsightCardPr
               <InsightEvidenceList evidence={insight.evidence} />
             </section>
           </CollapsibleContent>
-        </Collapsible>
+        </Collapsible> : null}
 
         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t pt-3">
           {insight.dataSources.map((source) => (

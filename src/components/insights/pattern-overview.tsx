@@ -32,6 +32,7 @@ import {
   formatPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type ComparisonRow = DivisionAnalysis | EmployeeGroupAnalysis
 
@@ -82,27 +83,27 @@ function ComparisonCard({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
+                  (() => {
+                    const canShow = canShowGroupDetail(row.latestPulseResponseCount)
+                    return (
                   <TableRow key={'division' in row ? row.division : row.group}>
                     <TableCell className="font-medium">
                       {'division' in row ? row.division : row.group}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCount(row.employeeCount)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatScoreOutOf(row.latestPulseEngagement, SCORE_SCALE.max)}
+                    <TableCell colSpan={canShow ? 1 : 4} className="text-right tabular-nums">
+                      {canShow ? formatCount(row.employeeCount) : PRIVACY_SUPPRESSED_MESSAGE}
                     </TableCell>
+                    {canShow ? <>
+                      <TableCell className="text-right tabular-nums">{formatScoreOutOf(row.latestPulseEngagement, SCORE_SCALE.max)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatDelta(row.engagementDifferenceFromCompany)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatPercentage(row.leaverRate)}</TableCell>
+                    </> : null}
                     <TableCell className="text-right tabular-nums">
-                      {formatDelta(row.engagementDifferenceFromCompany)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPercentage(row.leaverRate)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <span>n = {formatCount(row.latestPulseResponseCount)}</span>
-                      {row.isSmallSample ? (
-                        <span className="ml-2 text-xs text-muted-foreground">Small sample</span>
-                      ) : null}
+                      {canShow ? <span>n = {formatCount(row.latestPulseResponseCount)}</span> : '—'}
                     </TableCell>
                   </TableRow>
+                    )
+                  })()
                 ))}
               </TableBody>
             </Table>
@@ -114,17 +115,22 @@ function ComparisonCard({
 }
 
 function PulseTrendCard({ pulse }: { pulse: HrAnalysis['pulse'] }) {
+  const canShowLatest = canShowGroupDetail(pulse.latestWave?.responseCount)
+  const canShowPrevious = canShowGroupDetail(pulse.previousWave?.responseCount)
+  const safeWaves = pulse.waves.map((wave) =>
+    canShowGroupDetail(wave.responseCount) ? wave : { ...wave, averageEngagement: null },
+  )
   const summary = [
     { key: 'wave', label: 'Latest pulse', value: pulse.latestWave?.wave ?? EMPTY_VALUE },
     {
       key: 'latest',
       label: 'Latest score',
-      value: formatScoreOutOf(pulse.latestWave?.averageEngagement ?? null, SCORE_SCALE.max),
+      value: canShowLatest ? formatScoreOutOf(pulse.latestWave?.averageEngagement ?? null, SCORE_SCALE.max) : PRIVACY_SUPPRESSED_MESSAGE,
     },
     {
       key: 'previous',
       label: 'Previous score',
-      value: formatScoreOutOf(pulse.previousWave?.averageEngagement ?? null, SCORE_SCALE.max),
+      value: canShowPrevious ? formatScoreOutOf(pulse.previousWave?.averageEngagement ?? null, SCORE_SCALE.max) : PRIVACY_SUPPRESSED_MESSAGE,
     },
     {
       key: 'previous-responses',
@@ -169,7 +175,7 @@ function PulseTrendCard({ pulse }: { pulse: HrAnalysis['pulse'] }) {
         ) : (
           <div className="h-64 w-full min-w-0" role="img" aria-label="Pulse engagement trend by dated survey wave">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={pulse.waves} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+              <LineChart data={safeWaves} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="wave" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
                 <YAxis
@@ -185,9 +191,11 @@ function PulseTrendCard({ pulse }: { pulse: HrAnalysis['pulse'] }) {
                     return (
                       <div className="rounded-md border bg-background p-3 text-sm shadow-sm">
                         <p className="font-medium">{wave.wave}</p>
-                        <p>Engagement: {formatScoreOutOf(wave.averageEngagement, SCORE_SCALE.max)}</p>
-                        <p>Responses: n = {formatCount(wave.responseCount)}</p>
-                        <p>Unique respondents: {formatCount(wave.uniqueRespondentCount)}</p>
+                    {canShowGroupDetail(wave.responseCount) ? <>
+                      <p>Engagement: {formatScoreOutOf(wave.averageEngagement, SCORE_SCALE.max)}</p>
+                      <p>Responses: n = {formatCount(wave.responseCount)}</p>
+                      <p>Unique respondents: {formatCount(wave.uniqueRespondentCount)}</p>
+                    </> : <p>{PRIVACY_SUPPRESSED_MESSAGE}</p>}
                       </div>
                     )
                   }}
@@ -207,11 +215,11 @@ function PulseTrendCard({ pulse }: { pulse: HrAnalysis['pulse'] }) {
         )}
         <div className="overflow-x-auto text-xs text-muted-foreground">
           <div className="flex min-w-max gap-4">
-            {pulse.waves.map((wave) => (
-              <span key={wave.wave}>
-                {wave.wave}: {formatScoreOutOf(wave.averageEngagement, SCORE_SCALE.max)} · n = {wave.responseCount}
-              </span>
-            ))}
+                {pulse.waves.map((wave) => (
+                  <span key={wave.wave}>
+                {wave.wave}: {canShowGroupDetail(wave.responseCount) ? `${formatScoreOutOf(wave.averageEngagement, SCORE_SCALE.max)} · n = ${wave.responseCount}` : PRIVACY_SUPPRESSED_MESSAGE}
+                  </span>
+                ))}
           </div>
         </div>
       </CardContent>
@@ -221,6 +229,18 @@ function PulseTrendCard({ pulse }: { pulse: HrAnalysis['pulse'] }) {
 
 export function PatternOverview({ analysis }: { analysis: HrAnalysis }) {
   const [selectedPatternId, setSelectedPatternId] = useState('')
+  const safeSignals = analysis.patterns.signals.filter((signal) => {
+    if (signal.id === 'division-engagement') {
+      return canShowGroupDetail(analysis.patterns.lowestEngagementDivision?.latestPulseResponseCount)
+    }
+    if (signal.id === 'employee-group-engagement') {
+      return canShowGroupDetail(analysis.patterns.lowestEngagementEmployeeGroup?.latestPulseResponseCount)
+    }
+    if (signal.id === 'division-leavers') {
+      return canShowGroupDetail(analysis.patterns.highestLeaverRateDivision?.employeeCount)
+    }
+    return canShowGroupDetail(analysis.pulse.latestWave?.responseCount)
+  })
   const evidenceChoices = analysis.patterns.signals.flatMap((signal) => {
     const evidence = analysis.evidence.patternEvidenceById[signal.id]
     return evidence ? [{ id: signal.id, signal, evidence }] : []
@@ -248,14 +268,14 @@ export function PatternOverview({ analysis }: { analysis: HrAnalysis }) {
         rows={analysis.employeeGroups}
       />
       <PulseTrendCard pulse={analysis.pulse} />
-      {analysis.patterns.signals.length > 0 ? (
+      {safeSignals.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Observed Patterns</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-3 text-sm">
-              {analysis.patterns.signals.map((signal) => (
+              {safeSignals.map((signal) => (
                 <li key={signal.id} className="border-b pb-3 last:border-b-0 last:pb-0">
                   {signal.message}
                 </li>
@@ -263,6 +283,8 @@ export function PatternOverview({ analysis }: { analysis: HrAnalysis }) {
             </ul>
           </CardContent>
         </Card>
+      ) : analysis.patterns.signals.length > 0 ? (
+        <Card><CardContent className="py-5 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</CardContent></Card>
       ) : null}
       {selected ? (
         <div className="space-y-4">

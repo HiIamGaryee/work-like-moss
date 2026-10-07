@@ -3,9 +3,9 @@ import { SupportingEvidence } from '@/components/insights/supporting-evidence'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { MIN_ANALYSIS_SAMPLE_SIZE } from '@/data/hr-analytics.constants'
 import type { PriorityIssue, PrioritySource } from '@/types/hr-analytics'
 import { formatCount } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 const SOURCE_LABELS: Record<PrioritySource, string> = {
   employees: 'Employees',
@@ -23,6 +23,7 @@ const BREAKDOWN_COMPONENTS = [
 
 function SuggestedPriorityCard({ issue, rank }: { issue: PriorityIssue; rank: number }) {
   const bandLabel = issue.priorityBand[0].toUpperCase() + issue.priorityBand.slice(1)
+  const suppressed = !canShowGroupDetail(issue.sampleSize)
 
   return (
     <li>
@@ -33,18 +34,18 @@ function SuggestedPriorityCard({ issue, rank }: { issue: PriorityIssue; rank: nu
               <p className="text-xs text-muted-foreground">#{rank} · {issue.scopeType === 'employee_group' ? 'Employee Group' : issue.scopeType === 'division' ? 'Division' : 'Company'} · {issue.scopeName}</p>
               <CardTitle className="text-base">{issue.title}</CardTitle>
             </div>
-            <Badge variant="outline" className="shrink-0 tabular-nums">
+            {!suppressed ? <Badge variant="outline" className="shrink-0 tabular-nums">
               {bandLabel} · {issue.priorityScore} / 100
-            </Badge>
+            </Badge> : null}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          {!suppressed ? <div className="flex flex-wrap gap-1.5">
             {issue.sources.map((source) => (
               <Badge key={source} variant="secondary">{SOURCE_LABELS[source]}</Badge>
             ))}
-            {issue.sampleSize < MIN_ANALYSIS_SAMPLE_SIZE ? <Badge variant="outline">Small sample</Badge> : null}
-          </div>
+          </div> : null}
         </CardHeader>
         <CardContent className="space-y-4">
+          {suppressed ? <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p> : <>
           <Button variant="outline" size="sm" asChild>
             <Link to={`/actions?issue=${encodeURIComponent(issue.id)}`}>Review Action</Link>
           </Button>
@@ -88,6 +89,7 @@ function SuggestedPriorityCard({ issue, rank }: { issue: PriorityIssue; rank: nu
               </div>
             </details>
           ) : null}
+          </>}
         </CardContent>
       </Card>
     </li>

@@ -151,7 +151,7 @@ export function InsightsPage() {
         <div className="space-y-6">
           <InsightOverview summary={summary} latestWave={analytics.overview.latestPulse.wave} />
 
-          <ManagementAttention items={topPriorityItems} />
+          <ManagementAttention items={topPriorityItems} analytics={analytics} />
 
           {visibleItems.length === 0 ? (
             <Card>
@@ -225,6 +225,7 @@ export function InsightsPage() {
                       key={item.insight.id}
                       insight={item.insight}
                       priority={item.priority}
+                      analytics={analytics}
                       topDriverLabel={item.likelyDrivers[0]?.label ?? null}
                     />
                   ))}

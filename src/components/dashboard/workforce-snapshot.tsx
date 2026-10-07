@@ -24,6 +24,7 @@ import {
   formatPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
+import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type WorkforceSnapshotProps = {
   /** Highest-priority detected signal, if the intelligence layer found one. */
@@ -33,6 +34,7 @@ type WorkforceSnapshotProps = {
   engagementChange: ChangeMetric | null
   topExitReason: ExitReasonMetric | null
   exitResponseCount: number
+  onboardingResponseCount: number
 }
 
 const DIRECTION_ICONS: Record<ChangeDirection, ComponentType<{ className?: string }>> = {
@@ -59,24 +61,25 @@ export function WorkforceSnapshot({
   engagementChange,
   topExitReason,
   exitResponseCount,
+  onboardingResponseCount,
 }: WorkforceSnapshotProps) {
   const snapshotItems = [
     {
       key: 'leavers',
       label: 'Highest leaver share',
       primary: highestLeaverRateDivision?.division ?? EMPTY_VALUE,
-      secondary: highestLeaverRateDivision
+      secondary: highestLeaverRateDivision && canShowGroupDetail(highestLeaverRateDivision.employeeCount)
         ? `${formatPercentage(highestLeaverRateDivision.leaverRate)} of ${highestLeaverRateDivision.employeeCount} employees`
-        : 'No division data',
+        : highestLeaverRateDivision ? PRIVACY_SUPPRESSED_MESSAGE : 'No division data',
       direction: null,
     },
     {
       key: 'onboarding',
       label: 'Lowest onboarding dimension',
-      primary: weakestOnboardingDimension?.label ?? EMPTY_VALUE,
-      secondary: weakestOnboardingDimension
+      primary: weakestOnboardingDimension && canShowGroupDetail(onboardingResponseCount) ? weakestOnboardingDimension.label : weakestOnboardingDimension ? 'Onboarding analytics' : EMPTY_VALUE,
+      secondary: weakestOnboardingDimension && canShowGroupDetail(onboardingResponseCount)
         ? formatScoreOutOf(weakestOnboardingDimension.score, SCORE_SCALE.max)
-        : 'No onboarding data',
+        : weakestOnboardingDimension ? PRIVACY_SUPPRESSED_MESSAGE : 'No onboarding data',
       direction: null,
     },
     {
@@ -95,8 +98,8 @@ export function WorkforceSnapshot({
     {
       key: 'exit',
       label: 'Most common exit reason',
-      primary: topExitReason?.reason ?? EMPTY_VALUE,
-      secondary: topExitReason
+      primary: topExitReason && canShowGroupDetail(exitResponseCount) ? topExitReason.reason : topExitReason ? 'Exit analytics' : EMPTY_VALUE,
+      secondary: topExitReason && canShowGroupDetail(exitResponseCount)
         ? `${topExitReason.count} of ${formatCount(exitResponseCount)} responses · ${formatPercentage(topExitReason.percentage)}`
         : 'No exit survey data',
       direction: null,

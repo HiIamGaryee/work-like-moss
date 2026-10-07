@@ -90,7 +90,7 @@ export function ManagementAttention({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
-                <PriorityBadge level={item.priority.level} score={item.priority.score} />
+                <PriorityBadge level={item.priority.level} score={suppressed ? undefined : item.priority.score} />
                 <Badge variant={statusVariant(status)}>{status}</Badge>
                 <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                   View analysis

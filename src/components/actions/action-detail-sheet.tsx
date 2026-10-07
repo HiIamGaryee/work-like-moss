@@ -33,6 +33,7 @@ import type {
 import { isBefore, isValidIsoDate } from '@/utils/date'
 import { EMPTY_VALUE, formatDate } from '@/utils/format'
 import { formatActionMetric, formatDueWindow, isActionOverdue } from '@/utils/hr-action-view'
+import { PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type ActionDetailSheetProps = {
   action: HrAction | null
@@ -40,6 +41,7 @@ type ActionDetailSheetProps = {
   onClose: () => void
   onUpdateAssignment: (actionId: string, draft: ActionAssignmentDraft) => void
   onUpdateDelivery: (actionId: string, draft: ActionDeliveryDraft) => void
+  privacySuppressed?: boolean
 }
 
 function AssignmentEditor({
@@ -224,7 +226,7 @@ function DeliveryEditor({
  * activity was performed — never that the workforce outcome improved.
  */
 export function ActionDetailSheet({
-  action, today, onClose, onUpdateAssignment, onUpdateDelivery,
+  action, today, onClose, onUpdateAssignment, onUpdateDelivery, privacySuppressed = false,
 }: ActionDetailSheetProps) {
   if (!action) return null
 
@@ -235,12 +237,11 @@ export function ActionDetailSheet({
     { key: 'start', label: 'Start date', value: formatDate(action.startDate) },
     { key: 'due', label: 'Due date', value: formatDate(action.dueDate) },
     { key: 'window', label: 'Timeline', value: formatDueWindow(action, today) },
-    {
+    ...(privacySuppressed ? [{ key: 'privacy', label: 'Measurement detail', value: PRIVACY_SUPPRESSED_MESSAGE }] : [{
       key: 'baseline',
       label: `Baseline · ${action.baselineMetric?.label ?? 'measure'}`,
       value: formatActionMetric(action.baselineMetric),
-    },
-    { key: 'target', label: 'Target', value: formatActionMetric(action.targetMetric) },
+    }, { key: 'target', label: 'Target', value: formatActionMetric(action.targetMetric) }]),
     { key: 'measurement', label: 'Measurement type', value: action.measurementType === 'numeric' ? 'Numeric target' : 'Qualitative / diagnostic' },
     ...(action.noTargetReason ? [{ key: 'targetReason', label: 'No-target reason', value: action.noTargetReason }] : []),
     { key: 'created', label: 'Approved on', value: formatDate((action.approvedAt ?? action.createdAt).slice(0, 10)) },
@@ -264,7 +265,7 @@ export function ActionDetailSheet({
             {action.priorityLevelAtCreation ? (
               <PriorityBadge
                 level={action.priorityLevelAtCreation}
-                score={action.priorityScoreAtCreation}
+                score={privacySuppressed ? undefined : action.priorityScoreAtCreation}
               />
             ) : null}
             {action.editedByHr ? <Badge variant="outline">Edited by HR</Badge> : null}
@@ -308,7 +309,7 @@ export function ActionDetailSheet({
             onSave={onUpdateDelivery}
           />
 
-          {action.evidenceSources?.length ? (
+          {action.evidenceSources?.length && !privacySuppressed ? (
             <div className="flex flex-wrap gap-1.5">
               {action.evidenceSources.map((source) => (
                 <Badge key={source} variant="outline">{source}</Badge>

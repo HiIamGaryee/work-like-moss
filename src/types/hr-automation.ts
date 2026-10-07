@@ -29,6 +29,20 @@ export type AutomationType =
 
 export type AutomationUrgency = 'today' | 'upcoming' | 'overdue' | 'attention'
 
+export type FollowUpType =
+  | 'employee-care'
+  | 'onboarding-check-in'
+  | 'action-review'
+  | 'overdue-action'
+  | 'delivery-follow-up'
+  | 'hr-review'
+  | 'message-review'
+  | 'outcome-review'
+
+export type FollowUpStatus = 'open' | 'in-progress' | 'completed' | 'dismissed'
+
+export type FollowUpSource = 'automation' | 'action' | 'recommendation' | 'impact'
+
 /** Which facts a reminder rests on, shown to the reader as a badge. */
 export type AutomationSource = 'official-dataset' | 'demo-extension' | 'local-action'
 
@@ -122,6 +136,27 @@ export interface AutomationTypeCap {
   type: AutomationType
   shown: number
   detected: number
+}
+
+export interface HrFollowUpItem {
+  id: string
+  type: FollowUpType
+  title: string
+  description: string
+  relatedSignalId?: string
+  relatedActionId?: string
+  affectedGroup?: string
+  owner?: string
+  dueDate?: string
+  priority: AutomationUrgency
+  status: FollowUpStatus
+  createdAt?: string
+  completedAt?: string
+  source: FollowUpSource
+  automation?: HrAutomationItem
+  messageReviewAvailable?: boolean
+  linkTo?: string
+  linkLabel?: string
 }
 
 export interface HrAutomationResult {

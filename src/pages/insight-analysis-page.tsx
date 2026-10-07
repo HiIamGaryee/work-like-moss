@@ -1,4 +1,5 @@
 import { SearchX, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { RecommendedNextStep } from '@/components/actions/recommended-next-step'
 import { DatasetError } from '@/components/dataset-status'
@@ -6,6 +7,7 @@ import { EmptyState } from '@/components/empty-state'
 import { EvidenceTrail } from '@/components/insights/evidence-trail'
 import { InsightAnalysisHeader } from '@/components/insights/insight-analysis-header'
 import { InvestigationAreas } from '@/components/insights/investigation-areas'
+import { AiDraftPanel } from '@/components/insights/ai-draft-panel'
 import { IssueEvidenceSection } from '@/components/insights/issue-evidence-section'
 import { LikelyDriverCard } from '@/components/insights/likely-driver-card'
 import { PriorityScoreCard } from '@/components/insights/priority-score-card'
@@ -15,6 +17,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CAUSATION_DISCLAIMER, NO_DRIVER_MESSAGE } from '@/data/hr-root-cause-rules'
 import { useHrImpact } from '@/hooks/use-hr-impact'
 import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
+import {
+  buildHrAiDraftInput,
+  generateHrDraft,
+  getFallbackHrDraft,
+} from '@/services/hr-ai-draft.service'
 
 function AnalysisSkeleton() {
   return (
@@ -73,6 +80,8 @@ export function InsightAnalysisPage() {
   const linkedAction =
     demoActions.find((action) => action.sourceRecommendationId === recommendation?.id) ?? null
   const linkedImpact = impacts.find((impact) => impact.actionId === linkedAction?.id) ?? null
+  const [aiState, setAiState] = useState<{ insightId: string; result: Awaited<ReturnType<typeof getFallbackHrDraft>> } | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   if (error) {
     return (
@@ -114,6 +123,20 @@ export function InsightAnalysisPage() {
   const { insight, likelyDrivers, priority } = item
   const privacySuppressed = isInsightDetailSuppressed(item, analytics)
   const visibleDrivers = privacySuppressed ? [] : likelyDrivers
+  const aiInput = buildHrAiDraftInput(item, analytics, recommendation)
+  const aiResult = aiState !== null && aiState.insightId === insightId
+    ? aiState.result
+    : privacySuppressed
+      ? { draft: null, source: 'rule-based' as const, available: false, message: 'Insufficient responses for AI-assisted analysis.' }
+      : getFallbackHrDraft(item, recommendation)
+
+  const handleGenerateAiDraft = async (): Promise<void> => {
+    if (!aiInput || aiLoading) return
+    setAiLoading(true)
+    const result = await generateHrDraft(aiInput, item, recommendation)
+    setAiState({ insightId: insight.id, result })
+    setAiLoading(false)
+  }
 
   return (
     <div className="w-full space-y-6">
@@ -124,6 +147,16 @@ export function InsightAnalysisPage() {
       />
 
       <IssueEvidenceSection item={item} analytics={analytics} drivers={visibleDrivers} />
+
+      <AiDraftPanel
+        draft={aiResult.draft}
+        source={aiResult.source}
+        message={aiResult.message}
+        loading={aiLoading}
+        canGenerate={aiInput !== null}
+        onGenerate={handleGenerateAiDraft}
+        recommendation={privacySuppressed ? null : recommendation}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">

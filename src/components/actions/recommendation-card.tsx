@@ -10,10 +10,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { TARGET_DISCLAIMER } from '@/data/hr-action-targets'
 import type { RecommendedAction } from '@/types/hr-actions'
 import { formatActionMetric } from '@/utils/hr-action-view'
+import { PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
 
 type RecommendationCardProps = {
   recommendation: RecommendedAction
   onReview: (recommendation: RecommendedAction) => void
+  privacySuppressed?: boolean
 }
 
 /**
@@ -21,7 +23,7 @@ type RecommendationCardProps = {
  * and the evidence behind that choice. Nothing on this card has happened yet:
  * every value is a suggestion until a human opens the review panel.
  */
-export function RecommendationCard({ recommendation, onReview }: RecommendationCardProps) {
+export function RecommendationCard({ recommendation, onReview, privacySuppressed = false }: RecommendationCardProps) {
   const [open, setOpen] = useState(false)
   const isPending = recommendation.reviewStatus === 'pending-review'
 
@@ -48,7 +50,7 @@ export function RecommendationCard({ recommendation, onReview }: RecommendationC
     <Card className="min-w-0">
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <PriorityBadge level={recommendation.priorityLevel} score={recommendation.priorityScore} />
+          <PriorityBadge level={recommendation.priorityLevel} score={privacySuppressed ? undefined : recommendation.priorityScore} />
           <Badge variant="outline">{recommendation.driverLabel}</Badge>
           <span className="ml-auto">
             {isPending ? null : <ReviewStatusBadge status={recommendation.reviewStatus} />}
@@ -69,7 +71,7 @@ export function RecommendationCard({ recommendation, onReview }: RecommendationC
         ) : null}
         <p className="text-sm text-muted-foreground">{recommendation.description}</p>
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {privacySuppressed ? <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{PRIVACY_SUPPRESSED_MESSAGE}</p> : <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
           <div className="min-w-0 space-y-0.5">
             <dt className="text-xs text-muted-foreground">Affected scope</dt>
             <dd className="text-sm font-medium break-words">{recommendation.affectedScope}</dd>
@@ -80,14 +82,14 @@ export function RecommendationCard({ recommendation, onReview }: RecommendationC
               <dd className="text-sm font-medium break-words tabular-nums">{fact.value}</dd>
             </div>
           ))}
-        </dl>
+        </dl>}
 
         <div className="min-w-0 space-y-0.5 border-t pt-3">
           <p className="text-xs text-muted-foreground">Success measure</p>
           <p className="text-sm break-words">{recommendation.successMeasure}</p>
         </div>
 
-        <div className="space-y-2 text-sm">
+        {!privacySuppressed ? <div className="space-y-2 text-sm">
           <p className="text-muted-foreground">
             <span className="font-medium text-foreground">Why this action? </span>
             {recommendation.rationale}
@@ -97,9 +99,9 @@ export function RecommendationCard({ recommendation, onReview }: RecommendationC
               <Badge key={source} variant="outline">{source}</Badge>
             ))}
           </div>
-        </div>
+        </div> : null}
 
-        <Collapsible open={open} onOpenChange={setOpen}>
+        {!privacySuppressed ? <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-md border-t pt-3 text-sm font-medium transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
             <span>{open ? 'Hide evidence details' : 'Evidence details'}</span>
             <ChevronDown
@@ -119,10 +121,10 @@ export function RecommendationCard({ recommendation, onReview }: RecommendationC
               <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           </CollapsibleContent>
-        </Collapsible>
+        </Collapsible> : null}
 
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t pt-3">
-          {isPending ? (
+          {isPending && !privacySuppressed ? (
             <Button size="sm" onClick={() => onReview(recommendation)}>Review action</Button>
           ) : null}
         </div>
