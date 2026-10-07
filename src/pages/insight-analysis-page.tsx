@@ -21,6 +21,7 @@ import {
   buildHrAiDraftInput,
   generateHrDraft,
   getFallbackHrDraft,
+  isHrAiEnabled,
 } from '@/services/hr-ai-draft.service'
 
 function AnalysisSkeleton() {
@@ -124,6 +125,7 @@ export function InsightAnalysisPage() {
   const privacySuppressed = isInsightDetailSuppressed(item, analytics)
   const visibleDrivers = privacySuppressed ? [] : likelyDrivers
   const aiInput = buildHrAiDraftInput(item, analytics, recommendation)
+  const aiEnabled = isHrAiEnabled()
   const aiResult = aiState !== null && aiState.insightId === insightId
     ? aiState.result
     : privacySuppressed
@@ -153,9 +155,10 @@ export function InsightAnalysisPage() {
         source={aiResult.source}
         message={aiResult.message}
         loading={aiLoading}
-        canGenerate={aiInput !== null}
+        canGenerate={aiInput !== null && aiEnabled}
         onGenerate={handleGenerateAiDraft}
         recommendation={privacySuppressed ? null : recommendation}
+        aiEnabled={aiEnabled}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

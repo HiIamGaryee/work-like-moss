@@ -14,6 +14,7 @@ type AiDraftPanelProps = {
   canGenerate: boolean
   onGenerate: () => void
   recommendation: RecommendedAction | null
+  aiEnabled: boolean
 }
 
 export function AiDraftPanel({
@@ -24,6 +25,7 @@ export function AiDraftPanel({
   canGenerate,
   onGenerate,
   recommendation,
+  aiEnabled,
 }: AiDraftPanelProps) {
   return (
     <Card>
@@ -103,7 +105,7 @@ export function AiDraftPanel({
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-4">
           <Button onClick={onGenerate} disabled={!canGenerate || loading}>
-            {loading ? 'Generating draft…' : draft ? 'Regenerate draft' : 'Generate AI draft'}
+            {!aiEnabled ? 'AI drafting disabled' : loading ? 'Generating draft…' : draft ? 'Regenerate draft' : 'Generate AI draft'}
           </Button>
           {recommendation ? <Button variant="outline" size="sm" asChild><Link to={`/actions?recommendation=${encodeURIComponent(recommendation.id)}`}>Review existing recommendation</Link></Button> : null}
         </div>

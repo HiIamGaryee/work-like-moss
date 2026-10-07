@@ -1,5 +1,6 @@
 import {
   ChartNoAxesCombined,
+  Info,
   LayoutDashboard,
   ListChecks,
   Sparkles,
@@ -21,4 +22,5 @@ export const navigationItems: NavigationItem[] = [
   { label: 'Actions', href: '/actions', icon: ListChecks },
   { label: 'Automations', href: '/automations', icon: Workflow },
   { label: 'Impact', href: '/impact', icon: ChartNoAxesCombined },
+  { label: 'About MVP', href: '/about', icon: Info },
 ]

@@ -11,6 +11,8 @@ import { isInsightDetailSuppressed } from '@/utils/insight-privacy'
 /** Same-origin boundary expected to keep provider credentials server-side. */
 export const HR_DRAFT_API_PATH = '/api/hr-draft'
 
+export const isHrAiEnabled = (): boolean => import.meta.env.VITE_AI_ENABLED === 'true'
+
 /** The secure handler must apply these instructions before calling a provider. */
 export const HR_DRAFT_GUARDRAILS = [
   'Use only the supplied structured evidence; do not invent facts.',
@@ -143,6 +145,14 @@ export async function generateHrDraft(
   recommendation: RecommendedAction | null,
 ): Promise<HrAiDraftResult> {
   const fallback = fallbackDraft(item, recommendation)
+  if (!isHrAiEnabled()) {
+    return {
+      draft: fallback,
+      source: 'rule-based',
+      available: false,
+      message: 'AI drafting is disabled by VITE_AI_ENABLED. Showing the evidence-based draft instead.',
+    }
+  }
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), 15000)
   try {
