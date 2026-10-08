@@ -18,12 +18,10 @@ For local live Gemini drafting, copy `.env.example` to `.env`, then set:
 ```env
 VITE_AI_ENABLED=true
 GEMINI_API_KEY=your_gemini_key
-HR_DRAFT_PORT=8787
-AI_DRAFT_MODEL=gemini-2.5-flash-lite
 ```
 
-`GEMINI_API_KEY` is read only by `server/hr-draft-server.mjs`. The server uses the default
-port `8787` and model `gemini-2.5-flash-lite`; the values above are the local defaults.
+`GEMINI_API_KEY` is read only by `server/hr-draft-server.mjs`. Keep the local server
+configuration from `.env.example` when running the clone locally.
 Run the frontend and the secure draft boundary in separate terminals:
 
 ```bash
