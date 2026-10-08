@@ -14,8 +14,8 @@ for (const file of ['.env.local', '.env']) {
   }
 }
 
-const PORT = Number(process.env.AI_SERVER_PORT || 8787)
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite'
+const PORT = Number(process.env.HR_DRAFT_PORT || 8787)
+const MODEL = process.env.AI_DRAFT_MODEL || 'gemini-2.5-flash-lite'
 const API_KEY = process.env.GEMINI_API_KEY
 const MIN_GROUP_DETAIL_RESPONSES = 5
 const MAX_BODY_BYTES = 64 * 1024
