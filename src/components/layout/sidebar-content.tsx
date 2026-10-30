@@ -1,6 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { Building2, LogOut } from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { navigationItems } from '@/data/navigation'
+import { getNavigationItems } from '@/data/navigation'
+import { useDemoRole } from '@/hooks/use-demo-role'
+import { ROLE_CONFIG } from '@/lib/demo-role-config'
 import { cn } from '@/lib/utils'
 
 type SidebarContentProps = {
@@ -8,6 +12,24 @@ type SidebarContentProps = {
 }
 
 export function SidebarContent({ onNavigate }: SidebarContentProps) {
+  const navigate = useNavigate()
+  const { role, division, logout } = useDemoRole()
+  const roleLabel = role ? ROLE_CONFIG[role].label : ''
+  const hasDivisionScope = role ? ROLE_CONFIG[role].requiresDivision : false
+  const visibleNavigationItems = role ? getNavigationItems(role) : []
+
+  const handleLogout = (): void => {
+    logout()
+    onNavigate?.()
+    navigate('/login')
+  }
+
+  const handleChangeDivision = (): void => {
+    logout()
+    onNavigate?.()
+    navigate('/login', { state: { demoRole: 'manager' } })
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 border-b bg-card px-4 py-4">
@@ -25,7 +47,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
       <nav aria-label="Main navigation" className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
-          {navigationItems.map(({ label, href, icon: Icon }) => (
+          {visibleNavigationItems.map(({ label, href, icon: Icon }) => (
             <li key={href}>
               <NavLink
                 to={href}
@@ -51,9 +73,43 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
       <Separator />
 
-      <div className="min-w-0 p-3">
-        <p className="truncate text-sm font-medium">HR Workspace</p>
-        <p className="truncate text-xs text-muted-foreground">Glocomp</p>
+      <div className="min-w-0 space-y-3 p-3">
+        <div>
+          <p className="truncate text-sm font-medium">{roleLabel} Workspace</p>
+          <p className="truncate text-xs text-muted-foreground">Glocomp</p>
+        </div>
+        <div className="space-y-2 border-t pt-3">
+          <div>
+            <p className="text-[11px] text-muted-foreground">Viewing as</p>
+            <p className="truncate text-sm font-medium">{roleLabel}</p>
+          </div>
+          {hasDivisionScope && division ? (
+            <div className="space-y-2">
+              <div>
+                <p className="text-[11px] text-muted-foreground">Division</p>
+                <p className="truncate text-sm font-medium">{division}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                onClick={handleChangeDivision}
+              >
+                <Building2 aria-hidden="true" />
+                Change Division
+              </Button>
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground"
+            onClick={handleLogout}
+          >
+            <LogOut aria-hidden="true" />
+            Logout
+          </Button>
+        </div>
       </div>
     </div>
   )

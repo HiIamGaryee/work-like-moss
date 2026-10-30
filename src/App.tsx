@@ -1,6 +1,8 @@
 import { Route, Routes } from 'react-router-dom'
+import { RoleRouteGuard } from '@/components/role-route-guard'
 import { DashboardLayout } from '@/layouts/dashboard-layout'
 import { ActionsPage } from '@/pages/actions-page'
+import { AskWorkLikeMossPage } from '@/pages/ask-work-like-moss-page'
 import { AboutMvpPage } from '@/pages/about-mvp-page'
 import { AutomationsPage } from '@/pages/automations-page'
 import { EmployeesPage } from '@/pages/employees-page'
@@ -10,22 +12,27 @@ import { PatternInsightsPage } from '@/pages/pattern-insights-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { OverviewPage } from '@/pages/overview-page'
 import { FaqPage } from '@/pages/faq-page'
+import { LoginPage } from '@/pages/login-page'
 
 export default function App() {
   return (
     <Routes>
-      <Route element={<DashboardLayout />}>
-        <Route index element={<OverviewPage />} />
-        <Route path="about" element={<AboutMvpPage />} />
-        <Route path="demo-guide" element={<AboutMvpPage />} />
-        <Route path="faq" element={<FaqPage />} />
-        <Route path="insights" element={<PatternInsightsPage />} />
-        <Route path="insights/:insightId" element={<InsightAnalysisPage />} />
-        <Route path="employees" element={<EmployeesPage />} />
-        <Route path="actions" element={<ActionsPage />} />
-        <Route path="automations" element={<AutomationsPage />} />
-        <Route path="impact" element={<ImpactPage />} />
-        <Route path="*" element={<NotFoundPage />} />
+      <Route path="login" element={<LoginPage />} />
+      <Route element={<RoleRouteGuard />}>
+        <Route element={<DashboardLayout />}>
+          <Route index element={<OverviewPage />} />
+          <Route path="ask" element={<AskWorkLikeMossPage />} />
+          <Route path="about" element={<AboutMvpPage />} />
+          <Route path="demo-guide" element={<AboutMvpPage />} />
+          <Route path="faq" element={<FaqPage />} />
+          <Route path="insights" element={<PatternInsightsPage />} />
+          <Route path="insights/:insightId" element={<InsightAnalysisPage />} />
+          <Route path="employees" element={<EmployeesPage />} />
+          <Route path="actions" element={<ActionsPage />} />
+          <Route path="automations" element={<AutomationsPage />} />
+          <Route path="impact" element={<ImpactPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
       </Route>
     </Routes>
   )

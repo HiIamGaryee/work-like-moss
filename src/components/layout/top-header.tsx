@@ -5,7 +5,9 @@ import { MobileSidebar } from '@/components/layout/mobile-sidebar'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { navigationItems } from '@/data/navigation'
+import { getNavigationItems, navigationItems } from '@/data/navigation'
+import { useDemoRole } from '@/hooks/use-demo-role'
+import { ROLE_CONFIG, type DemoRole } from '@/lib/demo-role-config'
 
 type HeaderAction = {
   label: string
@@ -24,13 +26,14 @@ const headerActions: HeaderAction[] = [{ label: 'Follow-Up', icon: Bell, href: '
  * Longest matching prefix, so a nested route like `/insights/:id` still reports
  * the section it belongs to rather than falling through to "Not found".
  */
-function useCurrentPageLabel() {
+function useCurrentPageLabel(role: DemoRole | null) {
   const { pathname } = useLocation()
+  const visibleNavigationItems = role ? getNavigationItems(role) : navigationItems
 
-  const exact = navigationItems.find((item) => item.href === pathname)
+  const exact = visibleNavigationItems.find((item) => item.href === pathname)
   if (exact) return exact.label
 
-  const nested = navigationItems
+  const nested = visibleNavigationItems
     .filter((item) => item.href !== '/' && pathname.startsWith(`${item.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0]
 
@@ -38,7 +41,11 @@ function useCurrentPageLabel() {
 }
 
 export function TopHeader() {
-  const pageLabel = useCurrentPageLabel()
+  const { role, isAllowed } = useDemoRole()
+  const pageLabel = useCurrentPageLabel(role)
+  const visibleHeaderActions = headerActions.filter(
+    ({ href }) => href === undefined || isAllowed(href),
+  )
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
@@ -47,9 +54,9 @@ export function TopHeader() {
       <p className="truncate text-sm font-medium">{pageLabel}</p>
 
       <div className="ml-auto flex items-center gap-1">
-        <DemoMenu />
+        {isAllowed('/insights') ? <DemoMenu /> : null}
 
-        {headerActions.map(({ label, icon: Icon, href }) => (
+        {visibleHeaderActions.map(({ label, icon: Icon, href }) => (
           <Tooltip key={label}>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label={label} asChild={href !== undefined}>
@@ -67,7 +74,9 @@ export function TopHeader() {
         ))}
 
         <Avatar className="ml-1 size-7">
-          <AvatarFallback className="text-xs">HR</AvatarFallback>
+          <AvatarFallback className="text-xs">
+            {role ? ROLE_CONFIG[role].label : ''}
+          </AvatarFallback>
         </Avatar>
       </div>
     </header>

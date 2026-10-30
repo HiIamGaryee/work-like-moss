@@ -30,7 +30,7 @@ function reportDataQuality(analytics: HrAnalytics): void {
  * rather than manufacturing numbers.
  */
 export function useHrAnalytics(): HrAnalyticsState {
-  const { data, isLoading, error, retry } = useHrData()
+  const { data, isLoading, error, retry } = useHrData({ unscoped: true })
 
   const analytics = useMemo(() => (data ? calculateHrAnalytics(data) : null), [data])
 

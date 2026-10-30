@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useDemoRole } from '@/hooks/use-demo-role'
 import { useHrIntelligence } from '@/hooks/use-hr-intelligence'
+import { getRoleDivision } from '@/lib/demo-role-config'
+import { actionMatchesDivision } from '@/lib/divisions'
 import {
   applyActionAssignment,
   applyActionDelivery,
@@ -65,6 +68,8 @@ type HrActionsState = {
 }
 
 export function useHrActions(): HrActionsState {
+  const { role, division } = useDemoRole()
+  const managerDivision = getRoleDivision(role, division)
   const { data, analytics, items, topPriorityItems, isLoading, error, retry } =
     useHrIntelligence()
 
@@ -97,6 +102,20 @@ export function useHrActions(): HrActionsState {
             : 'pending-review'),
       })),
     [generated, reviews, demoActions],
+  )
+  const activeActions = useMemo(
+    () => managerDivision
+      ? demoActions.filter((action) => actionMatchesDivision(action, managerDivision))
+      : demoActions,
+    [demoActions, managerDivision],
+  )
+  const officialActions = useMemo(
+    () => {
+      const records = analytics?.actions.records ?? []
+      return managerDivision
+        ? records.filter((action) => actionMatchesDivision(action, managerDivision))
+        : records
+    }, [analytics, managerDivision],
   )
 
   const approveAction = useCallback(
@@ -178,8 +197,8 @@ export function useHrActions(): HrActionsState {
     intelligenceItems: items,
     topPriorityItems,
     recommendations,
-    activeActions: demoActions,
-    officialActions: analytics?.actions.records ?? [],
+    activeActions,
+    officialActions,
     storageAvailable,
     isLoading,
     error,

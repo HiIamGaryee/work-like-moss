@@ -1,5 +1,8 @@
 import { useMemo } from 'react'
+import { useDemoRole } from '@/hooks/use-demo-role'
 import { useHrAnalytics } from '@/hooks/use-hr-analytics'
+import { getRoleDivision } from '@/lib/demo-role-config'
+import { scopeDatasetToDivision, scopeIntelligenceResult } from '@/lib/divisions'
 import { generateHrIntelligence } from '@/services/hr-intelligence.service'
 import type { HrAnalytics } from '@/types/hr-analytics'
 import type { HrDataset } from '@/types/hr-data'
@@ -24,15 +27,22 @@ type HrIntelligenceState = {
  * after the workbook has loaded.
  */
 export function useHrIntelligence(): HrIntelligenceState {
+  const { role, division } = useDemoRole()
   const { data, analytics, isLoading, error, retry } = useHrAnalytics()
+  const managerDivision = getRoleDivision(role, division)
 
-  const result = useMemo(
-    () => (analytics ? generateHrIntelligence(analytics) : null),
-    [analytics],
+  const result = useMemo(() => {
+    if (!analytics) return null
+    const fullResult = generateHrIntelligence(analytics)
+    return managerDivision ? scopeIntelligenceResult(fullResult, managerDivision) : fullResult
+  }, [analytics, managerDivision])
+  const scopedData = useMemo(
+    () => data && managerDivision ? scopeDatasetToDivision(data, managerDivision) : data,
+    [data, managerDivision],
   )
 
   return {
-    data,
+    data: scopedData,
     analytics,
     result,
     items: result?.items ?? [],

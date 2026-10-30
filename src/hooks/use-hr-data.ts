@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useDemoRole } from '@/hooks/use-demo-role'
+import { getRoleDivision } from '@/lib/demo-role-config'
+import { scopeDatasetToDivision } from '@/lib/divisions'
 import { loadHrDataset, reloadHrDataset } from '@/services/hr-data.service'
 import type { HrDataset } from '@/types/hr-data'
 
@@ -10,7 +13,8 @@ type HrDataState = {
 
 const INITIAL_STATE: HrDataState = { data: null, isLoading: true, error: null }
 
-export function useHrData() {
+export function useHrData({ unscoped = false }: { unscoped?: boolean } = {}) {
+  const { role, division } = useDemoRole()
   const [state, setState] = useState<HrDataState>(INITIAL_STATE)
   const mounted = useRef(true)
 
@@ -42,5 +46,11 @@ export function useHrData() {
     run(reloadHrDataset)
   }, [run])
 
-  return { ...state, retry }
+  const scopedData = useMemo(() => {
+    const managerDivision = getRoleDivision(role, division)
+    if (!state.data || unscoped || !managerDivision) return state.data
+    return scopeDatasetToDivision(state.data, managerDivision)
+  }, [division, role, state.data, unscoped])
+
+  return { ...state, data: scopedData, retry }
 }

@@ -30,7 +30,10 @@ import {
 } from '@/components/ui/table'
 import { demoCareProfiles } from '@/data/hr-care-demo'
 import { getEmployeeExitStatus } from '@/data/hr-data.constants'
+import { useDemoRole } from '@/hooks/use-demo-role'
 import { useHrData } from '@/hooks/use-hr-data'
+import { getRoleDivision } from '@/lib/demo-role-config'
+import { getAvailableDivisions } from '@/lib/divisions'
 import type { Employee } from '@/types/hr-data'
 import { formatCount } from '@/utils/format'
 
@@ -65,6 +68,8 @@ const distinct = (values: readonly string[]): string[] => [...new Set(values)].s
  * separately labelled section.
  */
 export function EmployeesPage() {
+  const { role, division: sessionDivision } = useDemoRole()
+  const managerDivision = getRoleDivision(role, sessionDivision)
   const { data, isLoading, error, retry } = useHrData()
 
   const [search, setSearch] = useState('')
@@ -76,7 +81,7 @@ export function EmployeesPage() {
   /* Memoised so the `[]` fallback does not re-run every filter on each render. */
   const employees = useMemo(() => data?.employees ?? [], [data])
 
-  const divisions = useMemo(() => distinct(employees.map((e) => e.division)), [employees])
+  const divisions = useMemo(() => getAvailableDivisions(data), [data])
   const groups = useMemo(() => distinct(employees.map((e) => e.employeeGroup)), [employees])
 
   const filtered = useMemo(() => {
@@ -108,7 +113,6 @@ export function EmployeesPage() {
   }
 
   const filters = [
-    { key: 'division', label: 'Division', value: division, set: setDivision, options: divisions },
     { key: 'group', label: 'Employee group', value: group, set: setGroup, options: groups },
   ]
 
@@ -156,6 +160,32 @@ export function EmployeesPage() {
                   placeholder="ID, division, group or location"
                 />
               </div>
+
+              {managerDivision ? (
+                <div className="space-y-1.5">
+                  <Label>Division</Label>
+                  <div className="flex h-8 items-center rounded-lg border bg-muted/30 px-2.5 text-sm font-medium">
+                    {managerDivision}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="employee-division">Division</Label>
+                  <Select value={division} onValueChange={setDivision}>
+                    <SelectTrigger id="employee-division" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All divisions</SelectItem>
+                      {divisions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {filters.map((filter) => (
                 <div key={filter.key} className="space-y-1.5">
