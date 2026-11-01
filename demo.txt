@@ -1,0 +1,124 @@
+WORK LIKE MOSS - 3 MINUTE DEMO SCRIPT
+Audience: CEO / HR / Manager
+Device: MacBook M1, browser zoom 90-100%, DevTools closed, one tab only
+Spoken pace: about 130 words per minute. Total spoken: about 390 words.
+
+==================================================
+BEFORE YOU START (do this 10 minutes early)
+==================================================
+[ ] npm run dev is running, site open at /login
+[ ] Reset demo: log in as HR > top bar Demo menu > Reset demo (clears old approvals)
+[ ] Click through once: Overview > Signals > one signal > Actions > Follow-Up > Impact (confirm each loads with data)
+[ ] Stay on /login when the meeting starts
+[ ] Silence notifications, close Slack/Mail, plug in charger
+[ ] Backup: if the app dies, open /about (Demo Guide) and read the steps from it
+
+NOTE: Login and logout each take about 2.4 seconds on purpose (fake auth).
+Fill that gap by talking. Never stare at the spinner.
+
+==================================================
+0:00 - 0:25  THE PROBLEM  (screen: /login)
+==================================================
+DO:    Point at the role cards. Do not click yet.
+
+SAY:
+"Most companies find out someone is unhappy when the resignation letter arrives.
+Work Like Moss turns the data HR already has, pulse surveys, exits, onboarding,
+into early warnings, and then tracks whether the fix actually worked.
+There are three roles: HR, Manager, and CEO. I will start as HR."
+
+DO:    Click HR. (spinner 2.4s)
+
+SAY (during spinner):
+"Everything you see runs on a synthetic company dataset. No real employee data."
+
+==================================================
+0:25 - 0:55  OVERVIEW  (screen: / )
+==================================================
+DO:    Let the page load. Slowly point at the KPI row, then scroll to
+       Management Attention.
+
+SAY:
+"This is HR's home. Total employees, leaver rate, engagement, new joiner
+experience, open actions. But the number that matters is this queue,
+Management Attention. The system has already ranked the workforce problems
+by priority, so HR does not hunt through spreadsheets."
+
+DO:    Click the top item in Management Attention (or go to Signals in the sidebar).
+
+==================================================
+0:55 - 1:30  SIGNAL + EVIDENCE  (screen: /insights then /insights/:id)
+==================================================
+DO:    On the signal detail page, point at: affected group, current value,
+       benchmark, difference, sample size, priority.
+       Scroll to Supporting Evidence, then the possible explanation.
+
+SAY:
+"Each signal shows the group, the score, the benchmark, and how far off it is.
+Below that is the evidence: exit reasons, comment themes, survey trends.
+We never act on one score alone. HR sees the proof first.
+And privacy is built in: groups under five responses are suppressed, so we
+analyse teams, never individuals."
+
+DO (optional, 5 seconds, only if time): open the AI Draft panel, show the lens selector.
+SAY: "The AI only drafts. Different HR lenses, same data. HR decides."
+
+==================================================
+1:30 - 2:10  ACTIONS  (screen: /actions)
+==================================================
+DO:    Sidebar > Actions. Click "Review action" on a suggested action.
+       Drawer opens. Point at: owner, deadline, baseline, target, success measure.
+       Close the drawer WITHOUT approving (keeps demo clean).
+       Then point at an already approved action in the tracking table:
+       status, delivery status, intended vs reached audience, coverage.
+
+SAY:
+"From the signal, the system suggests an action. Owner, deadline, baseline,
+target, and how we will measure success. This is only a draft. HR stays the
+decision maker. Once approved, we track delivery: who was meant to be reached,
+who actually was, and the coverage. So the CEO can see the action really
+happened, not just that someone planned it."
+
+==================================================
+2:10 - 2:40  FOLLOW-UP + IMPACT  (screen: /automations then /impact)
+==================================================
+DO:    Sidebar > Follow-Up. Point at due and overdue items.
+       Sidebar > Impact. Open one action impact record.
+       Point at baseline vs target vs follow-up result.
+
+SAY:
+"Follow-ups land in one queue, due items, overdue actions, outcome reviews,
+so nothing relies on someone's memory. And here is the part most tools skip:
+Impact. We separate 'did the action happen' from 'did it improve the result'.
+Delivery alone proves nothing. We wait for comparable follow-up data, then
+show before and after."
+
+==================================================
+2:40 - 3:00  CEO CLOSE  (screen: /ask)
+==================================================
+DO:    Bottom of sidebar > Sign out (spinner 2.4s) > choose CEO.
+       Sidebar > Ask Work Like Moss. Click one suggested question
+       (or type: "Which division needs attention first?").
+
+SAY (during spinner):
+"Managers get the same flow, locked to their own division."
+
+SAY (once the answer shows):
+"And for the CEO: a clean dashboard, plus plain-English questions answered from
+the same evidence. Signal, evidence, action, follow-up, impact.
+That is Work Like Moss. Happy to take questions."
+
+==================================================
+IF YOU RUN OUT OF TIME - CUT IN THIS ORDER
+==================================================
+1. Cut the AI Draft panel mention
+2. Cut Follow-Up (go Actions > Impact directly)
+3. Cut the CEO switch, say "CEO gets a dashboard and Ask" and stop
+
+==================================================
+DO NOT SAY
+==================================================
+- "AI decides what HR should do"  ->  say "AI drafts, HR decides"
+- "Delivery proves success"       ->  say "wait for follow-up data"
+- Any individual employee score or judgement
+- "It is real data"               ->  it is a synthetic dataset

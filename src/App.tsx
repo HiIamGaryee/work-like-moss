@@ -12,11 +12,13 @@ import { PatternInsightsPage } from '@/pages/pattern-insights-page'
 import { OverviewPage } from '@/pages/overview-page'
 import { FaqPage } from '@/pages/faq-page'
 import { LoginPage } from '@/pages/login-page'
+import { DemoNotesPage } from '@/pages/demo-notes-page'
 
 export default function App() {
   return (
     <Routes>
       <Route path="login" element={<LoginPage />} />
+      <Route path="demo-notes" element={<DemoNotesPage />} />
       <Route element={<RoleRouteGuard />}>
         <Route element={<DashboardLayout />}>
           <Route index element={<OverviewPage />} />
