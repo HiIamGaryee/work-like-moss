@@ -11,7 +11,7 @@ export function DashboardLayout() {
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopHeader />
-          <main className="flex-1 bg-muted/20 px-4 py-6 md:px-6 lg:px-8">
+          <main className="flex-1 bg-muted/20 px-4 py-6 md:px-6 lg:px-10 lg:pt-10 lg:pb-8">
             <div className="mx-auto w-full max-w-[1600px]">
               <Outlet />
             </div>

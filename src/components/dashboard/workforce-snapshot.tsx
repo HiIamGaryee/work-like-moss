@@ -35,6 +35,8 @@ type WorkforceSnapshotProps = {
   topExitReason: ExitReasonMetric | null
   exitResponseCount: number
   onboardingResponseCount: number
+  /** CEO view: the analysis pages are off-limits, so no link. */
+  hideLink?: boolean
 }
 
 const DIRECTION_ICONS: Record<ChangeDirection, ComponentType<{ className?: string }>> = {
@@ -62,6 +64,7 @@ export function WorkforceSnapshot({
   topExitReason,
   exitResponseCount,
   onboardingResponseCount,
+  hideLink = false,
 }: WorkforceSnapshotProps) {
   const snapshotItems = [
     {
@@ -113,7 +116,7 @@ export function WorkforceSnapshot({
         <CardDescription>
           Recorded facts from the dataset, without interpretation.
         </CardDescription>
-        <CardAction>
+        {hideLink ? null : <CardAction>
           <Link
             to={topPriority ? `/insights/${topPriority.id}` : '/insights'}
             className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -121,7 +124,7 @@ export function WorkforceSnapshot({
             {topPriority ? 'View highest-priority analysis' : 'View all insights'}
             <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
-        </CardAction>
+        </CardAction>}
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">

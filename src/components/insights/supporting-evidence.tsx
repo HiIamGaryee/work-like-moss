@@ -1,3 +1,4 @@
+import { CommentThemeMentions } from '@/components/insights/comment-theme-mentions'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SCORE_SCALE } from '@/data/hr-analytics.constants'
@@ -186,30 +187,7 @@ export function SupportingEvidence({
         </Card>
       ) : null}
 
-      {safeCommentThemes.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Comment Theme Mentions</CardTitle>
-            <CardDescription>
-              Simple keyword matches in source comments. Mentions do not indicate positive or
-              negative sentiment; comments are not changed or shown individually.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-2 text-sm sm:grid-cols-2">
-              {safeCommentThemes.map((mention) => (
-                <li key={`${mention.source}:${mention.theme}`} className="rounded-md border p-3">
-                  <p className="font-medium">{mention.label} · {SOURCE_LABELS[mention.source]}</p>
-                  <p className="tabular-nums text-muted-foreground">
-                    {mention.mentionCount} of {mention.totalComments} comments · {formatPercentage(mention.percentage)}
-                    {mention.isSmallSample ? ' · Small sample' : ''}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
+      {safeCommentThemes.length > 0 ? <CommentThemeMentions mentions={safeCommentThemes} /> : null}
     </section>
   )
 }

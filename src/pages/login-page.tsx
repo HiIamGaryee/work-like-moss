@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { AuthLoading } from '@/components/auth-loading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,7 +23,7 @@ import {
 import { useDemoRole } from '@/hooks/use-demo-role'
 import { useHrData } from '@/hooks/use-hr-data'
 import { getAvailableDivisions } from '@/lib/divisions'
-import { DEMO_ROLES, ROLE_CONFIG, type DemoRole } from '@/lib/demo-role-config'
+import { DEMO_ROLES, FAKE_AUTH_MS, ROLE_CONFIG, type DemoRole } from '@/lib/demo-role-config'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -35,6 +36,8 @@ export function LoginPage() {
   const [selectedDivision, setSelectedDivision] = useState<string | undefined>(
     requestedRole === 'manager' ? undefined : currentDivision ?? undefined,
   )
+  const [signingIn, setSigningIn] = useState(false)
+  const timer = useRef<number>(undefined)
   const { data, isLoading } = useHrData({ unscoped: true })
   const divisions = useMemo(() => getAvailableDivisions(data), [data])
   const managerSelected = selectedRole ? ROLE_CONFIG[selectedRole].requiresDivision : false
@@ -42,26 +45,44 @@ export function LoginPage() {
     ? divisions.includes(selectedDivision)
     : false
 
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const signIn = (role: DemoRole, division?: string): void => {
+    if (signingIn) return
+    setSigningIn(true)
+    timer.current = window.setTimeout(() => {
+      loginAs(role, division)
+      navigate(ROLE_CONFIG[role].defaultRoute)
+    }, FAKE_AUTH_MS)
+  }
+
   const selectRole = (role: DemoRole): void => {
+    if (signingIn) return
     setSelectedRole(role)
     if (ROLE_CONFIG[role].requiresDivision) {
       setSelectedDivision(undefined)
       return
     }
 
-    loginAs(role)
-    navigate(ROLE_CONFIG[role].defaultRoute)
+    signIn(role)
   }
 
   const continueAsManager = (): void => {
     if (selectedRole !== 'manager' || !validManagerDivision || !selectedDivision) return
-    loginAs(selectedRole, selectedDivision)
-    navigate(ROLE_CONFIG[selectedRole].defaultRoute)
+    signIn(selectedRole, selectedDivision)
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-muted/20 px-4 py-10">
-      <Card className="w-full max-w-lg">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10">
+      <img
+        src="/assets/login-bbg.jpeg"
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 size-full scale-110 object-cover blur-md"
+      />
+      <div aria-hidden="true" className="absolute inset-0 bg-background/30" />
+      {signingIn ? <AuthLoading message="Signing you in..." /> : null}
+      <Card className="relative w-full max-w-lg shadow-xl">
         <CardHeader className="gap-4 border-b pb-5">
           <div className="flex items-center gap-2.5">
             <div

@@ -1,9 +1,15 @@
-import { ArrowDown } from 'lucide-react'
+import { Star } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  DATA_SOURCE_SHORT_LABELS,
+  EVIDENCE_STAR_MAX,
+  EVIDENCE_STRENGTH_RATING,
+} from '@/data/dashboard.constants'
 import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import { DRIVER_LABELS } from '@/data/hr-root-cause-rules'
-import type { HrInsight, LikelyDriver } from '@/types/hr-insights'
+import { cn } from '@/lib/utils'
+import type { EvidenceStrength, HrInsight, InsightStrength, LikelyDriver } from '@/types/hr-insights'
 import { EMPTY_VALUE, formatCount, formatDelta, formatPercentage, formatScoreOutOf } from '@/utils/format'
 
 type EvidenceTrailProps = {
@@ -14,10 +20,13 @@ type EvidenceTrailProps = {
 type TrailNode = {
   id: string
   stage: string
-  source: string
+  isDetected: boolean
+  sources: string[]
   metric: string
   value: string
   comparison: string | null
+  /** The engine's own strength field; the trail only maps it to stars. */
+  strength: EvidenceStrength | InsightStrength
 }
 
 const renderValue = (value: number | string, format: string | undefined): string => {
@@ -40,13 +49,15 @@ function buildTrail(insight: HrInsight, drivers: LikelyDriver[]): TrailNode[] {
   const detected: TrailNode = {
     id: 'detected',
     stage: 'Detected signal',
-    source: insight.dataSources.join(' · '),
+    isDetected: true,
+    sources: insight.dataSources.map((source) => DATA_SOURCE_SHORT_LABELS[source]),
     metric: insight.metricLabel,
     value:
       insight.currentValue === null || insight.currentValue === undefined
         ? EMPTY_VALUE
         : renderValue(insight.currentValue, insight.metricLabel.toLowerCase().includes('rate') ? 'percentage' : 'score'),
     comparison: insight.affectedScope,
+    strength: insight.signalStrength,
   }
 
   const seen = new Set<string>()
@@ -59,13 +70,15 @@ function buildTrail(insight: HrInsight, drivers: LikelyDriver[]): TrailNode[] {
         {
           id,
           stage: DRIVER_LABELS[driver.category],
-          source: item.source ?? '',
+          isDetected: false,
+          sources: item.source ? [DATA_SOURCE_SHORT_LABELS[item.source]] : [],
           metric: item.label,
           value: renderValue(item.value, item.format),
           comparison:
             item.comparison === undefined
               ? null
               : `vs ${renderValue(item.comparison, item.format)}${item.comparisonLabel ? ` · ${item.comparisonLabel}` : ''}`,
+          strength: driver.evidenceStrength,
         },
       ]
     }),
@@ -74,58 +87,107 @@ function buildTrail(insight: HrInsight, drivers: LikelyDriver[]): TrailNode[] {
   return [detected, ...supporting]
 }
 
+const STAR_SLOTS = Array.from({ length: EVIDENCE_STAR_MAX }, (_, index) => index)
+
+function StrengthStars({ strength }: { strength: TrailNode['strength'] }) {
+  const { stars, label } = EVIDENCE_STRENGTH_RATING[strength]
+
+  return (
+    <span className="inline-flex items-center gap-1.5" title={`${label} evidence`}>
+      <span className="inline-flex" role="img" aria-label={`${label} evidence`}>
+        {STAR_SLOTS.map((slot) => (
+          <Star
+            key={slot}
+            className={cn(
+              'size-3',
+              slot < stars
+                ? 'fill-foreground text-foreground'
+                : 'fill-muted-foreground/10 text-muted-foreground/30',
+            )}
+            aria-hidden="true"
+          />
+        ))}
+      </span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </span>
+  )
+}
+
+const markerClass = (node: TrailNode): string => {
+  if (node.isDetected) return 'border-foreground bg-foreground'
+  if (node.strength === 'strong') return 'border-foreground/80 bg-foreground/80'
+  if (node.strength === 'moderate') return 'border-foreground/50 bg-foreground/40'
+  return 'border-muted-foreground/50 bg-card'
+}
+
 export function EvidenceTrail({ insight, drivers }: EvidenceTrailProps) {
   const trail = buildTrail(insight, drivers)
   const conclusion = drivers.map((driver) => driver.label)
+  const sourceCount = new Set(trail.flatMap((node) => node.sources)).size
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Evidence Trail</CardTitle>
-        <CardDescription>
-          Every measure the engine used, in the order it read them.
-        </CardDescription>
+        <CardDescription>Supporting evidence, in review order.</CardDescription>
+        <CardAction>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {trail.length} {trail.length === 1 ? 'item' : 'items'} · {sourceCount}{' '}
+            {sourceCount === 1 ? 'source' : 'sources'}
+          </p>
+        </CardAction>
       </CardHeader>
 
-      <CardContent className="space-y-2">
-        {trail.map((node, index) => (
-          <div key={node.id} className="space-y-2">
-            <div className="grid gap-1 rounded-lg border px-3 py-2.5 sm:grid-cols-[1fr_auto] sm:items-baseline">
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{node.stage}</p>
-                <p className="text-sm font-medium break-words">{node.metric}</p>
-                {node.source ? (
-                  <p className="text-xs text-muted-foreground">{node.source}</p>
-                ) : null}
+      <CardContent>
+        <ol className="ml-1.5 space-y-1 border-l border-border/70">
+          {trail.map((node) => (
+            <li key={node.id} className="relative pl-5">
+              <span
+                aria-hidden="true"
+                className={cn('absolute top-3.5 -left-[5px] size-2.5 rounded-full border ring-4 ring-card', markerClass(node))}
+              />
+              <div className="grid gap-x-6 gap-y-1 rounded-md px-2 py-2 transition-colors hover:bg-muted/40 sm:grid-cols-[1fr_auto]">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    {node.stage}
+                  </p>
+                  <p className="text-[15px] font-medium break-words">{node.metric}</p>
+                  {node.sources.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">{node.sources.join(' · ')}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-0.5 tabular-nums sm:items-end sm:text-right">
+                  <p className="text-base font-semibold">{node.value}</p>
+                  {node.comparison ? (
+                    <p className="text-xs text-muted-foreground">{node.comparison}</p>
+                  ) : null}
+                  <StrengthStars strength={node.strength} />
+                </div>
               </div>
-              <div className="text-left tabular-nums sm:text-right">
-                <p className="text-sm font-medium">{node.value}</p>
-                {node.comparison ? (
-                  <p className="text-xs text-muted-foreground">{node.comparison}</p>
-                ) : null}
-              </div>
-            </div>
-            {index < trail.length - 1 ? (
-              <ArrowDown className="mx-3 size-3.5 text-muted-foreground" aria-hidden="true" />
-            ) : null}
-          </div>
-        ))}
+            </li>
+          ))}
 
-        {conclusion.length > 0 ? (
-          <>
-            <ArrowDown className="mx-3 size-3.5 text-muted-foreground" aria-hidden="true" />
-            <div className="rounded-lg border border-dashed px-3 py-2.5">
-              <p className="text-xs text-muted-foreground">Reported as likely drivers</p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {conclusion.map((label) => (
-                  <Badge key={label} variant="secondary">
-                    {label}
-                  </Badge>
-                ))}
+          {conclusion.length > 0 ? (
+            <li className="relative pl-5">
+              <span
+                aria-hidden="true"
+                className="absolute top-3.5 -left-[5px] size-2.5 rounded-full border border-dashed border-muted-foreground/60 bg-card ring-4 ring-card"
+              />
+              <div className="px-2 py-2">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Reported as likely drivers
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {conclusion.map((label) => (
+                    <Badge key={label} variant="secondary">
+                      {label}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            </div>
-          </>
-        ) : null}
+            </li>
+          ) : null}
+        </ol>
       </CardContent>
     </Card>
   )

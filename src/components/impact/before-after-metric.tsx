@@ -1,18 +1,11 @@
 import { ArrowRight } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
-import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import type { ImpactMeasurement } from '@/types/hr-impact'
-import { EMPTY_VALUE, formatDate, formatDelta, formatPercentage, formatScore } from '@/utils/format'
+import { formatDate, formatDelta, formatPercentage } from '@/utils/format'
+import { formatImpactChange, formatImpactValue, impactScaleSuffix } from '@/utils/hr-impact-view'
 
 type BeforeAfterMetricProps = {
   measurement: ImpactMeasurement
-}
-
-const readValue = (value: number | null, unit: ImpactMeasurement['unit']): string => {
-  if (value === null) return EMPTY_VALUE
-  if (unit === 'percentage') return formatPercentage(value)
-  if (unit === 'count') return value.toLocaleString()
-  return formatScore(value)
 }
 
 /**
@@ -25,7 +18,7 @@ export function BeforeAfterMetric({ measurement }: BeforeAfterMetricProps) {
   const { unit, baselineValue, currentValue, targetValue, difference, progressToTarget } =
     measurement
 
-  const scaleSuffix = unit === 'score' ? ` / ${SCORE_SCALE.max}` : ''
+  const scaleSuffix = impactScaleSuffix(unit)
 
   const columns = [
     {
@@ -50,7 +43,7 @@ export function BeforeAfterMetric({ measurement }: BeforeAfterMetricProps) {
             <dd className="text-lg font-semibold tabular-nums">
               {column.key === 'target' && column.value === null
                 ? 'No numeric target'
-                : readValue(column.value, unit)}
+                : formatImpactValue(column.value, unit)}
               {column.value === null ? '' : (
                 <span className="text-xs font-normal text-muted-foreground">{scaleSuffix}</span>
               )}
@@ -75,9 +68,7 @@ export function BeforeAfterMetric({ measurement }: BeforeAfterMetricProps) {
         <span className="inline-flex items-center gap-1.5 text-sm font-medium tabular-nums">
           Observed change
           <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          {difference === null
-            ? EMPTY_VALUE
-            : `${formatDelta(difference)}${unit === 'percentage' ? ' pp' : ''}`}
+          {formatImpactChange(difference, unit)}
         </span>
         {measurement.percentageChange !== null ? (
           <span className="text-xs text-muted-foreground tabular-nums">

@@ -1,3 +1,4 @@
+import { CeoCharts } from '@/components/dashboard/ceo-charts'
 import { DatasetError } from '@/components/dataset-status'
 import { ActionProgress } from '@/components/dashboard/action-progress'
 import { AttentionToday } from '@/components/dashboard/attention-today'
@@ -12,16 +13,18 @@ import { PulseTrendChart } from '@/components/dashboard/pulse-trend-chart'
 import { WorkforceSnapshot } from '@/components/dashboard/workforce-snapshot'
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
+import { useDemoRole } from '@/hooks/use-demo-role'
 import { METRIC_HINTS } from '@/data/dashboard.constants'
-import { NEW_JOINER_MAX_MONTHS, SCORE_SCALE } from '@/data/hr-analytics.constants'
+import { SCORE_SCALE } from '@/data/hr-analytics.constants'
 import { useHrImpact } from '@/hooks/use-hr-impact'
 import { useHrAutomations } from '@/hooks/use-hr-automations'
 import type { HrAnalytics } from '@/types/hr-analytics'
 import {
-  formatChangeLabel,
   formatCount,
   formatDate,
+  formatDelta,
   formatPercentage,
+  formatRatioAsPercentage,
   formatScoreOutOf,
 } from '@/utils/format'
 import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-privacy'
@@ -33,24 +36,22 @@ import { canShowGroupDetail, PRIVACY_SUPPRESSED_MESSAGE } from '@/utils/insight-
 function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
   const { overview, pulse, onboarding } = analytics
   const change = pulse.engagementChange
+  const wave = overview.latestPulse.wave
 
   return [
     {
       label: 'Total Employees',
       value: formatCount(overview.totalEmployees),
       description: `${formatCount(overview.activeEmployees)} active · ${formatCount(overview.leavers)} leavers`,
-      hint: METRIC_HINTS.totalEmployees,
     },
     {
       label: 'Leaver Rate',
       value: formatPercentage(overview.leaverRate),
-      description: 'Share of employees marked as Leaver',
       hint: METRIC_HINTS.leaverRate,
     },
     {
       label: 'Exit Records',
       value: formatCount(overview.leavers),
-      description: `${formatCount(analytics.exits.responseCount)} exit survey responses`,
       hint: METRIC_HINTS.exitRecords,
     },
     {
@@ -58,15 +59,18 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
       value: canShowGroupDetail(overview.latestPulse.responseCount)
         ? formatScoreOutOf(overview.latestPulse.engagement, SCORE_SCALE.max)
         : PRIVACY_SUPPRESSED_MESSAGE,
-      description: overview.latestPulse.wave
-        ? `Latest wave · ${overview.latestPulse.wave}`
-        : undefined,
+      description: change ? undefined : wave ?? undefined,
       hint: METRIC_HINTS.pulseEngagement,
-      // Shown only when the analytics layer actually measured a change.
+      // Shown only when the analytics layer measured a change (latest vs first wave).
       trend: change
         ? {
             direction: change.direction,
-            label: formatChangeLabel(change.absoluteChange, change.direction, 'first wave'),
+            label: [
+              wave,
+              change.direction === 'flat' ? 'No change' : `${formatDelta(change.absoluteChange)} vs first`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
           }
         : undefined,
     },
@@ -75,19 +79,61 @@ function buildKpis(analytics: HrAnalytics): MetricCardProps[] {
       value: onboarding.newJoiners && canShowGroupDetail(onboarding.newJoiners.responseCount)
         ? formatScoreOutOf(onboarding.newJoiners.averageOverallScore, SCORE_SCALE.max)
         : onboarding.newJoiners ? PRIVACY_SUPPRESSED_MESSAGE : '—',
-      description: `Employees within first ${NEW_JOINER_MAX_MONTHS} months`,
+      description: `${formatCount(analytics.employees.newJoiners.newJoinerCount)} new joiners`,
       hint: METRIC_HINTS.newJoiner,
     },
     {
       label: 'Open Actions',
       value: formatCount(overview.openActions),
-      description: `${formatCount(analytics.actions.completedActions)} completed of ${formatCount(overview.totalActions)}`,
-      hint: METRIC_HINTS.openActions,
+      description: `${formatCount(analytics.actions.completedActions)} completed · ${formatCount(overview.totalActions)} total`,
+    },
+  ]
+}
+
+function buildCeoKpis(analytics: HrAnalytics): MetricCardProps[] {
+  const { employees, onboarding, exits, divisions } = analytics
+  const lowest = [...divisions]
+    .filter((d) => d.pulse?.latest?.engagement != null && canShowGroupDetail(d.pulse.latest.responseCount))
+    .sort((a, b) => (a.pulse?.latest?.engagement ?? 0) - (b.pulse?.latest?.engagement ?? 0))[0]
+
+  return [
+    {
+      label: 'Active Rate',
+      value: formatPercentage(employees.activeRate),
+    },
+    {
+      label: 'New Joiners',
+      value: formatCount(employees.newJoiners.newJoinerCount),
+      description: `${formatPercentage(employees.newJoiners.newJoinerLeaverRate)} have left`,
+    },
+    {
+      label: 'Base Engagement',
+      value: formatRatioAsPercentage(employees.averageBaseEngagement),
+      hint: METRIC_HINTS.baseEngagement,
+    },
+    {
+      label: 'Onboarding Score',
+      value: canShowGroupDetail(onboarding.responseCount)
+        ? formatScoreOutOf(onboarding.averageOverallScore, SCORE_SCALE.max)
+        : PRIVACY_SUPPRESSED_MESSAGE,
+      description: `${formatCount(onboarding.responseCount)} responses`,
+    },
+    {
+      label: 'Lowest Engagement Division',
+      value: lowest?.division ?? '—',
+      description: lowest ? formatScoreOutOf(lowest.pulse?.latest?.engagement ?? null, SCORE_SCALE.max) : undefined,
+    },
+    {
+      label: 'Top Exit Reason',
+      value: canShowGroupDetail(exits.responseCount) ? (exits.topExitReasons[0]?.reason ?? '—') : '—',
+      description: `${formatCount(exits.responseCount)} responses`,
     },
   ]
 }
 
 export function OverviewPage() {
+  const { role } = useDemoRole()
+  const isCeo = role === 'ceo'
   const {
     analytics,
     intelligenceItems,
@@ -131,8 +177,16 @@ export function OverviewPage() {
 
       {analytics ? (
         <div className="space-y-6">
+          {isCeo ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {buildCeoKpis(analytics).map((kpi) => (
+                <MetricCard key={kpi.label} {...kpi} />
+              ))}
+            </div>
+          ) : null}
+
           <section className="space-y-4" aria-labelledby="overview-kpis-title">
-            <div className="space-y-1"><h2 id="overview-kpis-title" className="text-lg font-semibold tracking-tight">Workforce Snapshot</h2><p className="text-sm text-muted-foreground">Key workforce and employee-experience indicators.</p></div>
+            <div className="space-y-1"><h2 id="overview-kpis-title" className="text-lg font-semibold tracking-tight">Key Metrics</h2></div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {buildKpis(analytics).map((kpi) => (
                 <MetricCard key={kpi.label} {...kpi} />
@@ -168,11 +222,14 @@ export function OverviewPage() {
             topExitReason={analytics.exits.topExitReasons[0] ?? null}
             exitResponseCount={analytics.exits.responseCount}
             onboardingResponseCount={analytics.onboarding.responseCount}
+            hideLink={isCeo}
           />
+
+          {isCeo ? <CeoCharts analytics={analytics} /> : null}
 
           <DivisionOverview divisions={analytics.divisions} />
 
-          <section className="space-y-4 border-t pt-7" aria-labelledby="overview-attention-title">
+          {isCeo ? null : <section className="space-y-4 border-t pt-7" aria-labelledby="overview-attention-title">
             <div className="space-y-1"><h2 id="overview-attention-title" className="text-lg font-semibold tracking-tight">Priority Workforce Signals</h2><p className="text-sm text-muted-foreground">Group-level signals that may require HR review.</p></div>
             <ManagementAttention
               items={intelligenceItems}
@@ -180,18 +237,18 @@ export function OverviewPage() {
               groupOnly
               alwaysVisible
             />
-          </section>
+          </section>}
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {isCeo ? null : <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <AttentionToday items={activeAutomations} totalActive={activeAutomations.length} />
             <ActionProgress
               actions={analytics.actions}
               pendingRecommendations={pendingRecommendations}
             />
-          </div>
+          </div>}
 
           {/* Only once HR has approved something, so a fresh demo stays clean. */}
-          {demoActions.length > 0 ? (
+          {!isCeo && demoActions.length > 0 ? (
             <DecisionLoopCard
               summary={impactSummary}
               hasInsights={topPriorityItems.length > 0}

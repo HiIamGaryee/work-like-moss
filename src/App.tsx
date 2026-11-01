@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { RoleRouteGuard } from '@/components/role-route-guard'
 import { DashboardLayout } from '@/layouts/dashboard-layout'
 import { ActionsPage } from '@/pages/actions-page'
@@ -9,7 +9,6 @@ import { EmployeesPage } from '@/pages/employees-page'
 import { ImpactPage } from '@/pages/impact-page'
 import { InsightAnalysisPage } from '@/pages/insight-analysis-page'
 import { PatternInsightsPage } from '@/pages/pattern-insights-page'
-import { NotFoundPage } from '@/pages/not-found-page'
 import { OverviewPage } from '@/pages/overview-page'
 import { FaqPage } from '@/pages/faq-page'
 import { LoginPage } from '@/pages/login-page'
@@ -31,9 +30,9 @@ export default function App() {
           <Route path="actions" element={<ActionsPage />} />
           <Route path="automations" element={<AutomationsPage />} />
           <Route path="impact" element={<ImpactPage />} />
-          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
 }

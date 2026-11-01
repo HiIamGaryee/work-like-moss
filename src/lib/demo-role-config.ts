@@ -1,6 +1,9 @@
 export const DEMO_ROLE_STORAGE_KEY = 'work-like-moss:demo-role'
 export const DEMO_DIVISION_STORAGE_KEY = 'work-like-moss:manager-division'
 
+/** Simulated network latency for login/logout. */
+export const FAKE_AUTH_MS = 2400
+
 export const DEMO_ROLES = ['hr', 'ceo', 'manager'] as const
 
 export type DemoRole = (typeof DEMO_ROLES)[number]

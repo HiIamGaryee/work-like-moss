@@ -20,7 +20,9 @@ export function InfoHint({ label, hint }: InfoHintProps) {
       >
         <Info className="size-3.5" aria-hidden="true" />
       </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
+      <TooltipContent side="top" sideOffset={6} className="max-w-[280px] items-start leading-snug">
+        {hint}
+      </TooltipContent>
     </Tooltip>
   )
 }

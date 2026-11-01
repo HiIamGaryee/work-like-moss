@@ -48,12 +48,12 @@ export function TopHeader() {
   )
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
+    <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 border-b border-border/60 bg-background px-4 md:px-6 lg:px-10">
       <MobileSidebar />
 
-      <p className="truncate text-sm font-medium">{pageLabel}</p>
+      <p className="truncate text-base font-semibold tracking-tight">{pageLabel}</p>
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-4">
         {isAllowed('/insights') ? <DemoMenu /> : null}
 
         {visibleHeaderActions.map(({ label, icon: Icon, href }) => (
@@ -73,8 +73,8 @@ export function TopHeader() {
           </Tooltip>
         ))}
 
-        <Avatar className="ml-1 size-7">
-          <AvatarFallback className="text-xs">
+        <Avatar className="size-9">
+          <AvatarFallback className="text-xs font-medium">
             {role ? ROLE_CONFIG[role].label : ''}
           </AvatarFallback>
         </Avatar>

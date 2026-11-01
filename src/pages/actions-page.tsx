@@ -36,6 +36,7 @@ import type {
 import { todayIsoDate } from '@/utils/date'
 import { formatCount } from '@/utils/format'
 import { isActionOverdue } from '@/utils/hr-action-view'
+import { getRecommendationSignal } from '@/utils/hr-recommendation-view'
 import { isGroupScopeSuppressed } from '@/utils/insight-privacy'
 
 /* ------------------------------------------------------------------ filters */
@@ -415,7 +416,7 @@ export function ActionsPage() {
                 <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-medium">Suggested Actions · {formatCount(shownRecommendations.length)}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{ACTION_TABS[0].description}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Highest priority first. Review the signal, evidence and priority before approving an action.</p>
                   </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Select
@@ -467,6 +468,7 @@ export function ActionsPage() {
                     <RecommendationCard
                       key={recommendation.id}
                       recommendation={recommendation}
+                      signal={getRecommendationSignal(recommendation, analytics)}
                       onReview={setReviewing}
                       privacySuppressed={isGroupScopeSuppressed(recommendation.impactScope, recommendation.evidenceSources, analytics)}
                     />
